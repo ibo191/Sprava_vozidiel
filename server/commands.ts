@@ -161,8 +161,11 @@ export function applyCommand(
     const existing = s.plans.find((p) => p.id === payload.id);
     const p = { id: existing?.id ?? id(), ...b };
     audit("plan", p.id, existing ?? null, p);
-    if (existing) Object.assign(existing, p);
-    else s.plans.push(p);
+    if (existing) {
+      Object.assign(existing, p);
+      delete existing.reviewServiceId;
+      delete existing.lastServiceId;
+    } else s.plans.push(p);
   } else if (action === "issue.save") {
     const b = issueSchema.parse(payload);
     const v = vehicle(b.vehicleId);
@@ -226,11 +229,33 @@ export function applyCommand(
     audit("issue", i.id, { ...i }, b);
     i.supplement = b.supplement;
     i.status = "new";
-  } else if (action === "service.save") {
+  } else if (action === "service.save" || action === "service.update") {
     requireManager();
     const b = serviceSchema.parse(payload);
     vehicle(b.vehicleId);
     ownAttachment(s, u, b.attachmentId);
+    const existing =
+      action === "service.update"
+        ? s.services.find((r) => r.id === z.string().min(1).parse(payload.id))
+        : undefined;
+    if (action === "service.update") {
+      assert(existing, "Servisní záznam neexistuje.", 404);
+      const revision = z
+        .number()
+        .int()
+        .nonnegative()
+        .parse(payload.expectedRevision);
+      assert(
+        revision === (existing.revision ?? 0),
+        "Servis mezitím upravil jiný správce. Zavřete formulář, obnovte evidenci a otevřete jej znovu.",
+        409,
+      );
+      assert(
+        existing.vehicleId === b.vehicleId ||
+          !s.issues.some((i) => i.serviceId === existing.id),
+        "Servis je propojen s hlášením závady. Nejprve zrušte propojení, potom změňte vozidlo.",
+      );
+    }
     const matches = s.plans
       .filter(
         (p) =>
@@ -238,11 +263,68 @@ export function applyCommand(
           b.items.some((i) => i.kind === "action" && i.name === p.action),
       )
       .map((p) => p.id);
-    const service = { id: id(), ...b, pendingPlanIds: matches };
-    s.services.push(service);
-    if (b.km !== null)
-      addReading(b.vehicleId, b.date, b.km, "service:" + service.id);
-    audit("service", service.id, null, service);
+    const before = existing ? structuredClone(existing) : null;
+    const basisChanged =
+      !!existing &&
+      (existing.date !== b.date ||
+        existing.km !== b.km ||
+        existing.vehicleId !== b.vehicleId ||
+        JSON.stringify(
+          existing.items
+            .filter((i) => i.kind === "action")
+            .map((i) => i.name)
+            .sort(),
+        ) !==
+          JSON.stringify(
+            b.items
+              .filter((i) => i.kind === "action")
+              .map((i) => i.name)
+              .sort(),
+          ));
+    const service = existing ?? { id: id(), ...b, pendingPlanIds: matches };
+    if (existing) {
+      Object.assign(service, b, {
+        revision: (existing.revision ?? 0) + 1,
+        editedAt: new Date().toISOString(),
+        editedBy: u.id,
+      });
+      service.pendingPlanIds = basisChanged ? matches : existing.pendingPlanIds;
+      if (basisChanged)
+        for (const p of s.plans) {
+          const lastAudit = s.audit.findLast(
+            (a) => a.entity === "plan" && a.entityId === p.id,
+          );
+          const linked =
+            p.lastServiceId === service.id ||
+            (!p.lastServiceId &&
+              (lastAudit?.after as { serviceId?: string } | null)?.serviceId ===
+                service.id);
+          if (linked) {
+            const prior = structuredClone(p);
+            p.reviewServiceId = service.id;
+            audit("plan", p.id, prior, p);
+          }
+        }
+    } else s.services.push(service);
+    if (!existing || basisChanged) {
+      const source = "service:" + service.id;
+      const previous = s.readings.find((r) => r.source === source);
+      const readingBefore = previous ? structuredClone(previous) : null;
+      s.readings = s.readings.filter((r) => r.source !== source);
+      if (b.km !== null) {
+        addReading(b.vehicleId, b.date, b.km, source);
+        if (previous) s.readings.at(-1)!.id = previous.id;
+      }
+      const readingAfter = s.readings.find((r) => r.source === source) ?? null;
+      if (existing && (readingBefore || readingAfter))
+        audit(
+          "reading",
+          readingAfter?.id ?? readingBefore!.id,
+          readingBefore,
+          readingAfter,
+        );
+    }
+    audit("service", service.id, before, service);
     result = service;
   } else if (action === "service.confirm") {
     requireManager();
@@ -300,11 +382,13 @@ export function applyCommand(
     );
     audit("plan", p.id, { ...p }, b);
     Object.assign(p, {
+      lastServiceId: service.id,
       lastDate: b.lastDate,
       lastKm: b.lastKm,
       nextDate: b.nextDate ?? null,
       nextKm: b.nextKm ?? null,
     });
+    delete p.reviewServiceId;
     service.pendingPlanIds = service.pendingPlanIds.filter(
       (pid) => pid !== p.id,
     );

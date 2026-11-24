@@ -353,12 +353,13 @@ function App() {
         input("booking", "Termín objednání", "date", false),
       ],
     });
-  const serviceDialog = () =>
+  const serviceDialog = (record?: Service) =>
     setDialog({
-      title: "Zapsat provedený servis",
-      subtitle:
-        "Preventivní výměny evidujeme samostatně od závad. Aktualizaci plánu potvrdíte po uložení.",
-      action: "service.save",
+      title: record ? "Upravit servisní záznam" : "Zapsat provedený servis",
+      subtitle: record
+        ? "Oprava se uloží do historie změn. Import ze zdroje zůstane označený. Servisní plány se nepřepíší automaticky."
+        : "Preventivní výměny evidujeme samostatně od závad. Aktualizaci plánu potvrdíte po uložení.",
+      action: record ? "service.update" : "service.save",
       extra: "items",
       initial: {
         ...safeInitial,
@@ -375,12 +376,27 @@ function App() {
         workshop: "",
         note: "",
         attachmentId: null,
+        ...(record
+          ? {
+              ...record,
+              items: structuredClone(record.items),
+              expectedRevision: record.revision ?? 0,
+            }
+          : {}),
       },
       fields: [
-        vehicleField,
+        record
+          ? {
+              ...vehicleField,
+              options: s.vehicles.map((v) => ({
+                value: v.id,
+                label: `${v.brand} ${v.model} · ${v.plate}${v.active ? "" : " · vyřazeno"}`,
+              })),
+            }
+          : vehicleField,
         input("date", "Datum servisu", "date"),
         input("km", "Stav km (prázdné = neznámý)", "number", false),
-        input("workshop", "Servis / dílna"),
+        input("workshop", "Servis / dílna (prázdné = neuveden)", "text", false),
         input("total", "Celková cena (Kč, volitelně)", "number", false),
         input("note", "Poznámka", "textarea", false),
         input("attachmentId", "Doklad k servisu", "file", false),
@@ -388,7 +404,9 @@ function App() {
       onSuccess: () => {
         setPage("services");
         notify(
-          "Servis uložen. Odpovídající plány čekají níže na vaše potvrzení.",
+          record
+            ? "Servis opraven. Zkontrolujte případné návrhy a upozornění servisních plánů."
+            : "Servis uložen. Odpovídající plány čekají níže na vaše potvrzení.",
         );
       },
     });
@@ -570,6 +588,9 @@ function App() {
               </td>
               <td>
                 <Badge status={p.status} />
+                {p.reviewServiceId && (
+                  <small>Podklad servisu byl opraven. Zkontrolujte plán.</small>
+                )}
                 {p.incomplete && p.status === "overdue" && (
                   <small>Také neúplné údaje</small>
                 )}
@@ -831,7 +852,10 @@ function App() {
                       Nový plán
                     </button>
                   ) : page === "services" ? (
-                    <button className="button primary" onClick={serviceDialog}>
+                    <button
+                      className="button primary"
+                      onClick={() => serviceDialog()}
+                    >
                       <Plus size={18} />
                       Zapsat servis
                     </button>
@@ -1094,7 +1118,7 @@ function App() {
                             icon: Wrench,
                             title: "Zapsat servis",
                             sub: "Údržba a servisní náklady",
-                            click: serviceDialog,
+                            click: () => serviceDialog(),
                             tone: "green",
                           },
                           {
@@ -1600,8 +1624,7 @@ function App() {
                           </p>
                           {r.source && (
                             <p className="source-note">
-                              Moje Autoškola · servis #{r.source.id} · cena
-                              evidovaná ve zdroji
+                              Import Moje Autoškola · servis #{r.source.id}
                               {r.source.vehicleMatchedByLabel
                                 ? " · historické vozidlo spárováno podle přesného označení"
                                 : ""}
@@ -1613,11 +1636,26 @@ function App() {
                             ? money(r.total)
                             : r.items.every((i) => i.price !== null)
                               ? money(r.items.reduce((a, i) => a + i.price!, 0))
-                              : r.source
+                              : r.source && !r.editedAt
                                 ? "Cena ve zdroji neuvedena"
                                 : "Cena neúplná"}
                         </strong>
                       </div>
+                      <button
+                        className="button secondary"
+                        onClick={() => serviceDialog(r)}
+                      >
+                        Upravit servis
+                      </button>
+                      {r.editedAt && (
+                        <p className="source-note">
+                          Upraveno v této aplikaci{" "}
+                          {new Date(r.editedAt).toLocaleString("cs-CZ")} ·{" "}
+                          {s.users.find((u) => u.id === r.editedBy)?.name ??
+                            "Správce"}
+                          . Původní hodnoty jsou v historii změn.
+                        </p>
+                      )}
                       <div className="service-items">
                         {r.items.map((i, n) => (
                           <div key={n}>

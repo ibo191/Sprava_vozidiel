@@ -3,16 +3,21 @@ import express from "express";
 import { chromium } from "@playwright/test";
 import assert from "node:assert/strict";
 import { once } from "node:events";
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath } from "node:url";
 import { createApp } from "../server/app.ts";
 import { Store } from "../server/store.ts";
 const store = new Store(":memory:"),
   app = createApp(store);
+const fixture = store.load();
+fixture.services[0].source = {
+  system: "moje-autoskola",
+  id: "500",
+  capturedAt: new Date().toISOString(),
+};
+store.save(fixture);
 app.use(express.static("dist"));
 app.get("/{*path}", (_req, res) =>
-  res.sendFile(
-    fileURLToPath(new URL("../dist/index.html", import.meta.url)),
-  ),
+  res.sendFile(fileURLToPath(new URL("../dist/index.html", import.meta.url))),
 );
 const server = app.listen(0, "127.0.0.1");
 await once(server, "listening");
@@ -59,6 +64,27 @@ try {
   assert.equal(
     await admin.getByText("Průměrná cena paliva", { exact: false }).count(),
     0,
+  );
+  await admin
+    .locator("nav")
+    .getByRole("button", { name: "Servisní historie", exact: true })
+    .click();
+  await admin
+    .getByRole("button", { name: "Upravit servis", exact: true })
+    .click();
+  await admin
+    .getByRole("heading", { name: "Upravit servisní záznam", exact: true })
+    .waitFor();
+  await admin.getByLabel("Celková cena", { exact: false }).fill("4500");
+  await admin.getByRole("button", { name: "Uložit", exact: true }).click();
+  await admin.getByRole("dialog").waitFor({ state: "hidden" });
+  assert.equal(store.load().services.length, 1);
+  assert.equal(store.load().services[0].total, 4500);
+  assert.equal(store.load().services[0].source.id, "500");
+  assert.ok(
+    (await admin.locator(".service-record").innerText()).includes(
+      "Upraveno v této aplikaci",
+    ),
   );
   await admin
     .locator("nav")

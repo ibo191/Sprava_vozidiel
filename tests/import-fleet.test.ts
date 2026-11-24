@@ -6,6 +6,7 @@ import {
   type Snapshot,
 } from "../server/import-fleet.ts";
 import { fuelAnalytics, latestReading } from "../src/domain.ts";
+import { applyCommand } from "../server/commands.ts";
 function fixture(): Snapshot {
   return {
     version: 1,
@@ -174,7 +175,20 @@ test("servis bez ceny zůstává neúplný; explicitní nulová cena se zachová
 test("opakování servisního importu nepřidá duplicity a zachová ruční změnu", () => {
   const snap = serviceFixture(),
     { state: s } = importFleet(snap);
-  s.services[0].total = 555;
+  const r = s.services[0];
+  applyCommand(
+    s,
+    {
+      id: "test-manager",
+      name: "Správce",
+      email: "manager@example.test",
+      role: "manager",
+      active: true,
+    },
+    "service.update",
+    { ...r, total: 555, expectedRevision: 0 },
+    { password: () => {} },
+  );
   snap.servicesCapturedAt = "2026-11-23T12:00:00.000Z";
   const result = importFleet(snap, s);
   assert.equal(result.state.services.length, 1);

@@ -40,6 +40,8 @@ export type Reading = {
   source: string;
 };
 export type Plan = {
+  lastServiceId?: string;
+  reviewServiceId?: string;
   id: string;
   vehicleId: string;
   action: string;
@@ -95,6 +97,9 @@ export type ServiceItem = {
   price: number | null;
 };
 export type Service = {
+  revision?: number;
+  editedAt?: string;
+  editedBy?: string;
   id: string;
   vehicleId: string;
   date: string;
@@ -239,7 +244,7 @@ export const serviceSchema = z.object({
     )
     .min(1),
   total: z.number().nonnegative().nullable(),
-  workshop: text,
+  workshop: z.string().trim().max(300),
   note: z.string().max(3000),
   attachmentId: z.string().nullable(),
 });
@@ -364,6 +369,7 @@ export function planStatus(p: Plan, reading?: Reading, at = today()) {
     !!dueKm &&
     (!reading || Date.parse(at) - Date.parse(reading.date) > 30 * 86400000);
   const incomplete =
+    !!p.reviewServiceId ||
     (p.intervalKm !== null && dueKm === null) ||
     (p.intervalMonths !== null && dueDate === null) ||
     (dueKm !== null && !reading) ||

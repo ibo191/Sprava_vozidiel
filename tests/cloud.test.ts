@@ -260,6 +260,35 @@ test("cloud: accountless photo report, private storage, idempotency, manager rol
       done.vehicles.find((v: any) => v.id === "v1").unavailable,
       true,
     );
+    const service = done.services[0];
+    const edit = {
+      ...service,
+      total: 5555,
+      expectedRevision: service.revision ?? 0,
+    };
+    assert.equal(
+      (
+        await req(
+          "/command",
+          { action: "service.update", payload: edit },
+          "admin",
+        )
+      ).status,
+      200,
+    );
+    const corrected = await (await req("/state", undefined, "admin")).json();
+    assert.equal(corrected.services[0].total, 5555);
+    assert.equal(corrected.services.length, done.services.length);
+    assert.equal(
+      (
+        await req(
+          "/command",
+          { action: "service.update", payload: edit },
+          "admin",
+        )
+      ).status,
+      409,
+    );
     const bad = await req("/health", undefined, undefined, {
       Origin: "https://evil.example",
     });
