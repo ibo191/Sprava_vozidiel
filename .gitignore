@@ -1,0 +1,14 @@
+node_modules/
+dist/
+data/
+.env
+.env.*
+!.env.example
+.vercel/
+supabase/functions/fleet-api/server/
+supabase/functions/fleet-api/src/
+test-results/
+playwright-report/
+supabase/.temp/
+
+.vercel

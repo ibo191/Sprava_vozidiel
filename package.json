@@ -1,0 +1,38 @@
+{
+  "name": "bubu-flotila",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k \"tsx watch server/index.ts\" \"vite --host 127.0.0.1\"",
+    "build": "tsc --noEmit && vite build",
+    "start": "tsx server/index.ts",
+    "test": "tsx --test tests/*.test.ts",
+    "test:e2e": "playwright test",
+    "fetch:moje": "node scripts/fetch-fleet.mjs",
+    "fetch:services": "node scripts/fetch-services.mjs",
+    "import:moje": "tsx scripts/import-fleet.ts"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "2.119.2",
+    "express": "5.1.0",
+    "lucide-react": "0.468.0",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.17",
+    "@playwright/test": "1.56.1",
+    "@types/express": "5.0.1",
+    "@types/node": "24.0.0",
+    "@types/react": "19.1.0",
+    "@types/react-dom": "19.1.0",
+    "@vitejs/plugin-react": "4.4.1",
+    "concurrently": "9.1.2",
+    "supabase": "2.101.0",
+    "tsx": "4.19.3",
+    "typescript": "5.8.3",
+    "vite": "6.4.6"
+  }
+}

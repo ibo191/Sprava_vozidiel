@@ -1,0 +1,11 @@
+data/
+node_modules/
+.git/
+.env*
+server/
+scripts/
+supabase/
+tests/
+e2e/
+test-results/
+playwright-report/
