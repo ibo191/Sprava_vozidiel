@@ -306,3 +306,55 @@ test("mazání a plánování vyžadují správce; smazání bez důvodu se odm�
     ),
   );
 });
+test("potvrzené historické názvy a fyzické díly jsou sjednocené, práce a kapaliny zůstávají oddělené", () => {
+  const { s } = fixture();
+  assert.equal(
+    canonicalEntry(s, "action", "Brzy").id,
+    canonicalEntry(s, "action", "Brzdy").id,
+  );
+  assert.equal(
+    canonicalEntry(s, "action", "Olej").id,
+    canonicalEntry(s, "action", "Olejový servis").id,
+  );
+  assert.equal(
+    itemOperation({
+      kind: "part",
+      name: "3 DÍLNÁ SPOJKOVÁ SADA LUK",
+      reason: "",
+      price: null,
+    }),
+    "replacement",
+  );
+  assert.equal(
+    itemOperation({
+      kind: "part",
+      name: "Chladící kapalina",
+      reason: "",
+      price: null,
+    }),
+    "material",
+  );
+  assert.equal(
+    itemOperation({ kind: "part", name: "Geometrie", reason: "", price: null }),
+    "inspection",
+  );
+  assert.equal(
+    itemOperation({
+      kind: "part",
+      name: "Oprava levého brzdiče",
+      reason: "",
+      price: null,
+    }),
+    "repair",
+  );
+  assert.equal(
+    itemOperation({
+      kind: "part",
+      name: "Spojková sada (3dílná)",
+      reason: "",
+      price: null,
+      operation: "unspecified",
+    }),
+    "unspecified",
+  );
+});

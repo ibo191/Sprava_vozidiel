@@ -38,8 +38,10 @@ const definitions: {
   {
     name: "Výměna motorového oleje",
     kind: "action",
-    aliases: ["Olejový servis", "Motorový olej a filtr"],
+    aliases: ["Olejový servis", "Olej", "Motorový olej a filtr"],
+    defaultOperation: "replacement",
   },
+  { name: "Brzdy", kind: "action", aliases: ["Brzy"] },
   {
     name: "Čerpadlo ostřikovače",
     kind: "part",
@@ -166,6 +168,11 @@ export function itemOperation(item: ServiceItem): ItemOperation {
   if (n.startsWith("oprava ")) return "repair";
   if (n.startsWith("kontrola ") || n.startsWith("geometrie"))
     return "inspection";
+  const entry = canonicalEntry({ catalog: undefined }, item.kind, item.name);
+  if (entry.defaultOperation) return entry.defaultOperation;
+  if (/kapalin|lepidlo|primer|^lak(?:\s|$)/.test(n)) return "material";
+  // Operator confirmed that physical parts in the historic service records were replaced.
+  if (entry.kind === "part") return "replacement";
   return "unspecified";
 }
 export function catalogUsage(s: State, entryId: string, vehicleId?: string) {

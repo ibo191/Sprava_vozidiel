@@ -2547,7 +2547,7 @@ function FormDialog({
                   />
                   <select
                     aria-label="Typ zásahu"
-                    value={item.operation ?? "unspecified"}
+                    value={item.operation ?? itemOperation(item)}
                     onChange={(e) =>
                       set(
                         "items",

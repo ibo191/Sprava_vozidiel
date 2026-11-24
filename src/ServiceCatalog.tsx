@@ -61,9 +61,9 @@ export function ServiceCatalog({
       </label>
       <p className="record-note">
         Počet výměn znamená počet různých servisů s potvrzenou výměnou, nikoliv
-        počet kusů. Opravy a kontroly se nepočítají jako výměna. U historických
-        položek bez určení zásahu údaj neodhadujeme; doplníte jej přes Upravit
-        servis.
+        počet kusů. Podle potvrzení správce jsou historické fyzické díly
+        evidovány jako výměny. Opravy, kontroly a doplnění kapalin se odlišují.
+        Neurčený zásah doplníte přes Upravit servis.
       </p>
       {entries.map((entry) => {
         const usage = catalogUsage(

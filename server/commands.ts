@@ -432,8 +432,7 @@ export function applyCommand(
         originalKind:
           prior?.originalKind ??
           (item.kind !== entry.kind ? item.kind : undefined),
-        operation:
-          item.operation ?? (prior ? itemOperation(prior) : "unspecified"),
+        operation: item.operation ?? itemOperation(prior ?? item),
       };
     });
     const matches = s.plans
