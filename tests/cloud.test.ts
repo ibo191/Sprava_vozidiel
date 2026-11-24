@@ -177,12 +177,22 @@ test("cloud: accountless photo report, private storage, idempotency, manager rol
       severity: "serious",
       immobilize: true,
       description: "TEST izolovaný, poškozené světlo",
+      reporterName: "Testovací instruktor",
       photo: {
         name: "photo.png",
         mime: "image/png",
         data: Buffer.from("89504e470d0a1a0a", "hex").toString("base64"),
       },
     };
+    for (const reporterName of [undefined, "", "   "]) {
+      const invalid = await req(
+        "/reporting/submit",
+        { ...body, reporterName },
+        undefined,
+        headers,
+      );
+      assert.equal(invalid.status, 400);
+    }
     const first = await req("/reporting/submit", body, undefined, headers);
     assert.equal(first.status, 201);
     const receipt = await first.json();

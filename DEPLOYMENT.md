@@ -10,7 +10,7 @@ Pro pilot používáme verzovaný dokument v `private.fleet_runtime`, ne soubor 
 
 Tabulky jsou v neveřejném schématu, mají RLS bez klientských politik a odebraná oprávnění `anon`/`authenticated`. RPC smí volat pouze serverová role v Edge API. Fotografie a doklady jsou v privátním bucketu `fleet-private`; stažení zprostředkuje API po ověření správce. Upload předchází transakci, neúspěšný zápis soubor odstraní. V případě výpadku po uploadu může zůstat nepřiřazený soubor; nemá veřejný přístup a lze jej po porovnání s evidencí odstranit.
 
-`private.fleet_requests` chrání opakované odeslání hlášení a kód potvrzení. `private.fleet_limits` sdílí limity mezi instancemi: 20 nových hlášení/IP/hodinu, 200 nových pokusů pro sdílený formulář/hodinu; opakování již uloženého požadavku vrátí původní potvrzení. Klíč IP je hashovaný se soukromou solí. Limity zmírňují zneužití, nejsou CAPTCHA ani ověření totožnosti. Autor hlášení je nepovinné neověřené jméno. Správce má odkaz sdílet pouze s instruktory; admin jej může zneplatnit přes `/api/report-link/rotate`. Formulář nikdy nezpřístupňuje ostatní hlášení, náklady ani fotografie.
+`private.fleet_requests` chrání opakované odeslání hlášení a kód potvrzení. `private.fleet_limits` sdílí limity mezi instancemi: 20 nových hlášení/IP/hodinu, 200 nových pokusů pro sdílený formulář/hodinu; opakování již uloženého požadavku vrátí původní potvrzení. Klíč IP je hashovaný se soukromou solí. Limity zmírňují zneužití, nejsou CAPTCHA ani ověření totožnosti. Autor hlášení je povinné neověřené jméno. Správce má odkaz sdílet pouze s instruktory; admin jej může zneplatnit přes `/api/report-link/rotate`. Formulář nikdy nezpřístupňuje ostatní hlášení, náklady ani fotografie.
 
 ## Nasazení změn
 

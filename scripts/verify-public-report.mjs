@@ -85,7 +85,7 @@ try {
   await page
     .getByLabel("Popis závady nebo nehody")
     .fill("Testovací hlášení z formuláře bez přihlášení.");
-  await page.getByLabel("Vaše jméno (nepovinné)").fill("Testovací instruktor");
+  await page.getByLabel("Vaše jméno").fill("Testovací instruktor");
   await page.getByLabel("Označit vozidlo").check();
   await page
     .locator("input[capture]")

@@ -24,7 +24,7 @@ Tyto účty, místní reset hesla vracející jednorázový token a SQLite jsou 
 
 ## Formulář pro instruktory
 
-Správce otevře **Přehled / Závady a hlášení → Odkaz pro hlášení**. Odkaz lze zkopírovat nebo otevřít v samostatném okně. Má podobu `/hlaseni#<náhodný-klíč>`. Instruktor nepotřebuje účet ani přihlášení; držitel odkazu vybere aktivní vozidlo, typ Závada/Nehoda, závažnost, popis a případně jméno a fotografii. Jméno je nepovinné a není ověřenou identitou. Tlačítko **Vyfotit** používá mobilní vstup `capture="environment"`; dostupnost fyzického fotoaparátu závisí na zařízení. JPG/PNG do 5 MB, s náhledem před odesláním.
+Správce otevře **Přehled / Závady a hlášení → Odkaz pro hlášení**. Odkaz lze zkopírovat nebo otevřít v samostatném okně. Má podobu `/hlaseni#<náhodný-klíč>`. Instruktor nepotřebuje účet ani přihlášení; držitel odkazu vybere aktivní vozidlo, typ Závada/Nehoda, závažnost, popis, povinné jméno a případně fotografii. Jméno je povinné a není ověřenou identitou. Tlačítko **Vyfotit** používá mobilní vstup `capture="environment"`; dostupnost fyzického fotoaparátu závisí na zařízení. JPG/PNG do 5 MB, s náhledem před odesláním.
 
 Odkaz s klíčem sdílejte jen s oprávněnými lidmi. Klíč je v URL fragmentu, který se neposílá v HTTP URL; server jej ověřuje v hlavičce. Ve vývojovém režimu je uložen v interní tabulce SQLite `settings`. Přes odkaz je dostupný pouze minimální výběr aktivních vozidel a odeslání hlášení. Seznam hlášení, fotografie, náklady a správní API zůstávají přihlášeným správcům. Anonymní fotografie se nenahrávají do veřejného adresáře; ukládají se spolu s hlášením v jedné transakci.
 

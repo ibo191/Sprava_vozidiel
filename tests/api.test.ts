@@ -123,17 +123,31 @@ test("hlášení bez účtu přijde správci bez vytvoření uživatelského pro
     const visible = (await call("/state", undefined, admin)).data;
     assert(visible.issues.some((v: any) => v.id === i.id));
   }));
-test("jméno je nepovinné; falešný vlastník nebo stav z těla se nepřijme", () =>
+test("jméno je povinné; falešný vlastník nebo stav z těla se nepřijme", () =>
   harness(async ({ call, store, token }) => {
+    for (const reporterName of [undefined, "", "   "]) {
+      const invalid = await call(
+        "/reporting/submit",
+        { ...report(), reporterName },
+        "",
+        token,
+      );
+      assert.equal(invalid.status, 400);
+    }
     const r = await call(
       "/reporting/submit",
-      { ...report(), reporterName: "", owner: "admin", status: "resolved" },
+      {
+        ...report(),
+        reporterName: " Jan ",
+        owner: "admin",
+        status: "resolved",
+      },
       "",
       token,
     );
     assert.equal(r.status, 201);
     const i = store.load().issues.at(-1)!;
-    assert.equal(i.reporterName, null);
+    assert.equal(i.reporterName, "Jan");
     assert.equal(i.owner, null);
     assert.equal(i.status, "new");
   }));

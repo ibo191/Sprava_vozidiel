@@ -59,7 +59,7 @@ export function registerReporting(app: Express, store: Store) {
           description: z.string().trim().min(5).max(3000),
           severity: z.enum(["minor", "serious"]),
           immobilize: z.boolean(),
-          reporterName: z.string().trim().max(100).default(""),
+          reporterName: z.string().trim().min(1, "Vyplňte své jméno.").max(100),
           website: z.string().max(200).default(""),
           photo: z.unknown().optional(),
         })

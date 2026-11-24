@@ -244,8 +244,9 @@ export function PublicReport() {
                   </label>
                 )}
                 <label>
-                  Vaše jméno (nepovinné)
+                  Vaše jméno
                   <input
+                    required
                     maxLength={100}
                     autoComplete="name"
                     value={form.reporterName}
