@@ -1907,6 +1907,28 @@ function App() {
             >
               Otevřít formulář
             </a>
+            {cloud && admin && (
+              <button
+                className="text-button"
+                onClick={async () => {
+                  if (
+                    !window.confirm(
+                      "Předchozí odkaz přestane fungovat. Vytvořit nový odkaz pro instruktory?",
+                    )
+                  )
+                    return;
+                  try {
+                    const r = await api("/report-link/rotate", {});
+                    setReportLink(window.location.origin + r.path);
+                    notify("Starý odkaz byl zneplatněn. Sdílejte nový odkaz.");
+                  } catch (e) {
+                    notify((e as Error).message);
+                  }
+                }}
+              >
+                Zneplatnit odkaz a vytvořit nový
+              </button>
+            )}
           </section>
         </div>
       )}

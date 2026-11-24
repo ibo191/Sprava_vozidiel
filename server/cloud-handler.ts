@@ -525,13 +525,28 @@ export function createCloudHandler(db: SupabaseClient) {
             })),
           );
         } catch (e) {
-          if (createdUser) await db.auth.admin.deleteUser(createdUser);
+          if (createdUser) {
+            // A network error can occur after commit. Never delete an identity
+            // already referenced by the saved state, or when the outcome is unknown.
+            try {
+              const saved = await snapshot();
+              if (!saved.body.users.some((x) => x.id === createdUser))
+                await db.auth.admin.deleteUser(createdUser);
+            } catch {
+              /* Keep the identity for safe reconciliation. */
+            }
+          }
           throw e;
         }
       }
       return fail(404, "Neznámý požadavek.");
     } catch (e) {
       if (e instanceof HttpError) return json({ error: e.message }, e.status);
+      if ((e as { code?: string }).code === "40001")
+        return json(
+          { error: "Evidence se právě změnila. Obnovte ji a zkuste to znovu." },
+          409,
+        );
       if (e instanceof ZodError)
         return json(
           {
