@@ -63,7 +63,12 @@ export function ImportedFuel({
                     </strong>
                     <small>{v.plate}</small>
                   </td>
-                  <td>{fmt(f.km)}</td>
+                  <td>
+                    {fmt(f.km)}
+                    {f.readingExcluded && (
+                      <small>Odpočet vyřazen z výpočtů</small>
+                    )}
+                  </td>
                   <td>
                     {fmt(f.liters)} l
                     <small>{f.full ? "Plná nádrž" : "Částečná nádrž"}</small>

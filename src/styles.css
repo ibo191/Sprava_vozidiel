@@ -2222,6 +2222,86 @@ footer {
   grid-column: 3;
   grid-row: 1;
 }
+.item-editor select:nth-of-type(2) {
+  grid-column: 1/3;
+  grid-row: 4;
+}
+.catalog-record {
+  margin: 14px 22px;
+  border: 1px solid #e7edde;
+  border-radius: 8px;
+  padding: 14px;
+}
+.catalog-record summary {
+  cursor: pointer;
+  line-height: 1.8;
+}
+.catalog-record summary span {
+  display: block;
+  font-size: 12px;
+  color: #65755f;
+}
+.catalog-record p,
+.catalog-vehicle {
+  font-size: 12px;
+  line-height: 1.7;
+}
+.catalog-heading {
+  flex-wrap: wrap;
+}
+.catalog-heading select {
+  width: auto;
+  max-width: 220px;
+}
+.catalog-unused {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 22px 12px;
+  font-size: 12px;
+}
+.catalog-unused input {
+  width: 16px;
+  height: 16px;
+  min-height: 16px;
+}
+.catalog-record p {
+  overflow-wrap: anywhere;
+}
+.catalog-vehicle {
+  margin-top: 18px;
+}
+.follow-up-editor {
+  border-top: 1px solid #e7edde;
+  margin-top: 24px;
+  padding-top: 18px;
+}
+.follow-up-editor p {
+  font-size: 12px;
+  line-height: 1.7;
+  color: #65755f;
+}
+.follow-up-row {
+  padding: 14px;
+  border: 1px solid #e7edde;
+  border-radius: 8px;
+  margin: 12px 0;
+}
+.follow-up-row > .checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.follow-up-row input[type="checkbox"] {
+  width: 17px;
+  height: 17px;
+  min-height: 17px;
+  flex: none;
+}
+.follow-up-row .form-grid {
+  margin-top: 14px;
+}
 .receipt-modal {
   background: #fff;
   border-radius: 12px;

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { CatalogEntry, ItemOperation } from "./catalog.ts";
 export type Role = "teacher" | "manager" | "admin";
 export type SourceRef = {
   system: "moje-autoskola";
@@ -40,6 +41,7 @@ export type Reading = {
   source: string;
 };
 export type Plan = {
+  catalogKind?: "action" | "part";
   lastServiceId?: string;
   reviewServiceId?: string;
   id: string;
@@ -57,6 +59,7 @@ export type Plan = {
   booking: string | null;
 };
 export type Fuel = {
+  readingExcluded?: boolean;
   id: string;
   vehicleId: string;
   owner: string;
@@ -91,12 +94,17 @@ export type Issue = {
   attachmentId: string | null;
 };
 export type ServiceItem = {
+  catalogId?: string;
+  originalName?: string;
+  originalKind?: "action" | "part";
+  operation?: ItemOperation;
   kind: "action" | "part";
   name: string;
   reason: string;
   price: number | null;
 };
 export type Service = {
+  readingExcluded?: boolean;
   revision?: number;
   editedAt?: string;
   editedBy?: string;
@@ -130,6 +138,20 @@ export type Attachment = {
   data: string;
 };
 export type State = {
+  deletedReadings?: {
+    reading: Reading;
+    deletedAt: string;
+    deletedBy: string;
+    reason: string;
+  }[];
+  catalog?: CatalogEntry[];
+  deletedPlans?: {
+    plan: Plan;
+    deletedAt: string;
+    deletedBy: string;
+    reason: string;
+    pendingServiceIds: string[];
+  }[];
   operationalAlerts?: Pick<
     Issue,
     | "id"
@@ -214,6 +236,7 @@ export const planSchema = z
   .object({
     vehicleId: text,
     action: text,
+    catalogKind: z.enum(["action", "part"]).optional(),
     responsible: text,
     lastDate: pastDate.nullable(),
     lastKm: nullableKm,
@@ -240,6 +263,15 @@ export const serviceSchema = z.object({
         name: text,
         reason: text,
         price: z.number().nonnegative().nullable(),
+        operation: z
+          .enum([
+            "replacement",
+            "repair",
+            "inspection",
+            "material",
+            "unspecified",
+          ])
+          .optional(),
       }),
     )
     .min(1),

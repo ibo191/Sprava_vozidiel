@@ -15,6 +15,7 @@ export function edgeFiles() {
     "server/http-error.ts",
     "server/attachments.ts",
     "src/domain.ts",
+    "src/catalog.ts",
   ])
     files.push({ name, content: readFileSync(name, "utf8") });
   return files;

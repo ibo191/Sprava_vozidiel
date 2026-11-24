@@ -47,6 +47,15 @@ import {
   type Issue,
 } from "./domain";
 import "./styles.css";
+import { MileageReadings } from "./MileageReadings";
+import { ServiceCatalog } from "./ServiceCatalog";
+import { FollowUpEditor } from "./FollowUpEditor";
+import {
+  catalogFor,
+  canonicalEntry,
+  itemOperation,
+  operationLabels,
+} from "./catalog";
 import { MileageConflicts } from "./MileageConflicts";
 import { PublicReport } from "./PublicReport";
 import { ImportedFuel } from "./ImportedFuel";
@@ -362,6 +371,8 @@ function App() {
       action: record ? "service.update" : "service.save",
       extra: "items",
       initial: {
+        followUps: [],
+        followUpResponsible: user.name,
         ...safeInitial,
         km: null,
         items: [
@@ -379,7 +390,10 @@ function App() {
         ...(record
           ? {
               ...record,
-              items: structuredClone(record.items),
+              items: record.items.map((item) => ({
+                ...item,
+                operation: itemOperation(item),
+              })),
               expectedRevision: record.revision ?? 0,
             }
           : {}),
@@ -400,15 +414,33 @@ function App() {
         input("total", "Celková cena (Kč, volitelně)", "number", false),
         input("note", "Poznámka", "textarea", false),
         input("attachmentId", "Doklad k servisu", "file", false),
+        ...(record?.readingExcluded
+          ? [
+              {
+                name: "restoreReading",
+                label:
+                  "Znovu použít opravený odpočet km (server ověří chronologii)",
+                type: "checkbox",
+              },
+            ]
+          : []),
       ],
       onSuccess: () => {
         setPage("services");
         notify(
           record
             ? "Servis opraven. Zkontrolujte případné návrhy a upozornění servisních plánů."
-            : "Servis uložen. Odpovídající plány čekají níže na vaše potvrzení.",
+            : "Servis i zvolený další plán uloženy. Zkontrolujte případné položky k doplnění.",
         );
       },
+    });
+  const deleteReadingDialog = (r: State["readings"][number]) =>
+    setDialog({
+      title: "Smazat odpočet km",
+      subtitle: `${r.date} · ${r.km.toLocaleString("cs-CZ")} km. Vyřadí se pouze odpočet; původní servis nebo tankování zůstane zachováno.`,
+      action: "reading.delete",
+      initial: { id: r.id, reason: "" },
+      fields: [input("reason", "Důvod smazání", "textarea")],
     });
   const reviewIssue = (i: Issue) =>
     setDialog({
@@ -504,6 +536,10 @@ function App() {
       "Servisní náklady",
       "Náklady na údržbu podle vozidla a období.",
     ],
+    catalog: [
+      "Díly a úkony",
+      "Sjednocený katalog a historie výměn podle vozidla.",
+    ],
     users: ["Uživatelé", "Lidé, kteří udržují flotilu v pohybu."],
     audit: ["Historie změn", "Důležité opravy a jejich původ."],
   };
@@ -517,6 +553,7 @@ function App() {
       icon: History,
       restricted: true,
     },
+    { key: "catalog", label: "Díly a úkony", icon: Wrench, restricted: true },
     { key: "fuels", label: "Tankování", icon: FuelIcon },
     { key: "issues", label: "Závady a hlášení", icon: TriangleAlert },
     {
@@ -630,13 +667,33 @@ function App() {
               <td className="muted">{p.responsible}</td>
               <td>
                 {admin && (
-                  <button
-                    className="icon-btn"
-                    aria-label={"Upravit " + p.action}
-                    onClick={() => planDialog(p)}
-                  >
-                    <ChevronRight size={18} />
-                  </button>
+                  <>
+                    <button
+                      className="icon-btn"
+                      aria-label={"Upravit " + p.action}
+                      onClick={() => planDialog(p)}
+                    >
+                      <ChevronRight size={18} />
+                    </button>
+                    <button
+                      className="text-button"
+                      aria-label={"Smazat plán " + p.action}
+                      onClick={() =>
+                        setDialog({
+                          title: "Smazat servisní plán",
+                          subtitle:
+                            "Plán přestane upozorňovat. Servisní historie zůstane zachována; plán lze obnovit v seznamu smazaných plánů.",
+                          action: "plan.delete",
+                          initial: { id: p.id, reason: "" },
+                          fields: [
+                            input("reason", "Důvod smazání", "textarea"),
+                          ],
+                        })
+                      }
+                    >
+                      Smazat
+                    </button>
+                  </>
                 )}
               </td>
             </tr>
@@ -1201,12 +1258,17 @@ function App() {
                 "fuels",
                 "issues",
                 "analytics",
+                "catalog",
               ].includes(page) && (
                 <div className="toolbar">
                   <label className="search-field">
                     <Search size={17} />
                     <input
-                      placeholder="Hledat vozidlo nebo RZ…"
+                      placeholder={
+                        page === "catalog"
+                          ? "Hledat díl, úkon nebo původní název…"
+                          : "Hledat vozidlo nebo RZ…"
+                      }
                       value={search}
                       onChange={(e) => setSearch(e.target.value)}
                     />
@@ -1392,6 +1454,12 @@ function App() {
                             <div key={r.id}>
                               <Gauge size={16} />
                               <strong>{fmt(r.km)} km</strong>
+                              <button
+                                className="text-button"
+                                onClick={() => deleteReadingDialog(r)}
+                              >
+                                Smazat odpočet
+                              </button>
                               <span>{date(r.date)}</span>
                               <span
                                 className={
@@ -1426,16 +1494,89 @@ function App() {
                     )}
                   </div>
                   {planTable(planRows)}
+                  {!!s.deletedPlans?.length && (
+                    <details className="record-note">
+                      <summary>Smazané plány ({s.deletedPlans.length})</summary>
+                      {s.deletedPlans
+                        .filter(
+                          (x) =>
+                            vehicleId === "all" ||
+                            x.plan.vehicleId === vehicleId,
+                        )
+                        .map((x) => (
+                          <div className="proposal" key={x.plan.id}>
+                            <div>
+                              <strong>
+                                {vname(x.plan.vehicleId)} · {x.plan.action}
+                              </strong>
+                              <p>
+                                {x.reason} ·{" "}
+                                {new Date(x.deletedAt).toLocaleString("cs-CZ")}
+                              </p>
+                            </div>
+                            <button
+                              className="button secondary"
+                              onClick={async () => {
+                                try {
+                                  await command("plan.restore", {
+                                    id: x.plan.id,
+                                  });
+                                  notify("Plán obnoven.");
+                                } catch (e) {
+                                  notify((e as Error).message);
+                                }
+                              }}
+                            >
+                              Obnovit plán
+                            </button>
+                          </div>
+                        ))}
+                    </details>
+                  )}
                 </section>
+              )}
+              {page === "catalog" && (
+                <ServiceCatalog
+                  state={s}
+                  vehicleId={vehicleId}
+                  search={search}
+                />
               )}
               {page === "fuels" && (
                 <ImportedFuel state={s} vehicleId={vehicleId} search={search} />
+              )}
+              {page === "issues" && admin && (
+                <MileageReadings
+                  state={s}
+                  vehicleId={vehicleId}
+                  search={search}
+                  onDelete={deleteReadingDialog}
+                  onDeleteUndated={(id) =>
+                    setDialog({
+                      title: "Smazat nedatovaný stav km",
+                      subtitle:
+                        "Původní hodnota zůstane v historii změn vozidla.",
+                      action: "vehicle.clearUndatedKm",
+                      initial: { id, reason: "" },
+                      fields: [input("reason", "Důvod smazání", "textarea")],
+                    })
+                  }
+                  onRestore={async (id) => {
+                    try {
+                      await command("reading.restore", { id });
+                      notify("Odpočet obnoven; chronologie ověřena.");
+                    } catch (e) {
+                      notify((e as Error).message);
+                    }
+                  }}
+                />
               )}
               {page === "issues" && admin && (
                 <MileageConflicts
                   state={s}
                   vehicleId={vehicleId}
                   search={search}
+                  onDelete={deleteReadingDialog}
                   onResolve={(r, context) =>
                     setDialog({
                       title: "Prověřit rozporný odečet",
@@ -1621,6 +1762,8 @@ function App() {
                               ? "Stav km neznámý"
                               : fmt(r.km) + " km"}{" "}
                             · {r.workshop || "Dodavatel neuveden"}
+                            {r.readingExcluded &&
+                              " · Odpočet km vyřazen z výpočtů"}
                           </p>
                           {r.source && (
                             <p className="source-note">
@@ -1661,10 +1804,23 @@ function App() {
                           <div key={n}>
                             <Wrench size={15} />
                             <div>
-                              <strong>{i.name}</strong>
+                              <strong>
+                                {canonicalEntry(s, i.kind, i.name).name}
+                              </strong>
                               <small>
-                                {i.kind === "part" ? "Díl / materiál" : "Úkon"}{" "}
-                                · {i.reason}
+                                {canonicalEntry(s, i.kind, i.name).kind ===
+                                "part"
+                                  ? "Díl / materiál"
+                                  : "Úkon"}{" "}
+                                · {i.reason} ·{" "}
+                                {operationLabels[itemOperation(i)]}
+                                {(i.originalName ?? i.name) !==
+                                  canonicalEntry(s, i.kind, i.name).name && (
+                                  <span>
+                                    {" "}
+                                    · původně: {i.originalName ?? i.name}
+                                  </span>
+                                )}
                               </small>
                             </div>
                             <span>
@@ -2138,7 +2294,19 @@ function FormDialog({
     setPreview(url);
     return () => URL.revokeObjectURL(url);
   }, [file]);
-  const set = (k: string, v: any) => setValues((p) => ({ ...p, [k]: v }));
+  const set = (k: string, v: any) =>
+    setValues((p) => ({
+      ...p,
+      [k]: v,
+      ...(k === "items" &&
+      (v.length !== p.items.length ||
+        v.some(
+          (item: any, i: number) =>
+            item.name !== p.items[i]?.name || item.kind !== p.items[i]?.kind,
+        ))
+        ? { followUps: [] }
+        : {}),
+    }));
   useEffect(() => {
     const before = document.activeElement as HTMLElement;
     const key = (e: KeyboardEvent) => {
@@ -2180,10 +2348,7 @@ function FormDialog({
     }
   };
   const itemNames = Array.from(
-    new Set([
-      ...state.plans.map((p) => p.action),
-      ...state.services.flatMap((s) => s.items.map((i) => i.name)),
-    ]),
+    new Set([...catalogFor(state).map((e) => e.name)]),
   );
   return (
     <div
@@ -2339,6 +2504,10 @@ function FormDialog({
           {d.extra === "items" && (
             <div className="items-editor">
               <h3>Úkony a díly / materiál</h3>
+              <p>
+                Vyberte název z katalogu nebo napište vlastní. Typ zásahu
+                určuje, zda se položka počítá jako výměna.
+              </p>
               <datalist id="item-catalog">
                 {itemNames.map((n) => (
                   <option key={n} value={n} />
@@ -2376,6 +2545,24 @@ function FormDialog({
                       )
                     }
                   />
+                  <select
+                    aria-label="Typ zásahu"
+                    value={item.operation ?? "unspecified"}
+                    onChange={(e) =>
+                      set(
+                        "items",
+                        values.items.map((x: any, n: number) =>
+                          n === i ? { ...x, operation: e.target.value } : x,
+                        ),
+                      )
+                    }
+                  >
+                    {Object.entries(operationLabels).map(([key, label]) => (
+                      <option key={key} value={key}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
                   <input
                     aria-label="Důvod výměny"
                     placeholder="Důvod výměny"
@@ -2453,6 +2640,24 @@ function FormDialog({
                 e-maily.
               </div>
             )}
+          {d.extra === "items" && (
+            <FollowUpEditor
+              state={state}
+              items={values.items}
+              vehicleId={values.vehicleId}
+              date={values.date}
+              km={
+                values.km === null ||
+                values.km === undefined ||
+                values.km === ""
+                  ? null
+                  : Number(values.km)
+              }
+              values={values.followUps ?? []}
+              onChange={(v) => set("followUps", v)}
+              responsible={values.followUpResponsible ?? "Správce"}
+            />
+          )}
           {error && (
             <div className="error-banner" role="alert">
               {error}
@@ -2477,7 +2682,12 @@ function FormDialog({
                 ? "Ukládání…"
                 : d.action === "vehicle.retire"
                   ? "Vyřadit vozidlo"
-                  : "Uložit"}
+                  : d.action === "reading.delete" ||
+                      d.action === "vehicle.clearUndatedKm"
+                    ? "Smazat odpočet"
+                    : d.action === "plan.delete"
+                      ? "Smazat plán"
+                      : "Uložit"}
             </button>
           </div>
         </form>

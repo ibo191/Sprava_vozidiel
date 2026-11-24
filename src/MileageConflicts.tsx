@@ -21,11 +21,13 @@ export function MileageConflicts({
   vehicleId,
   search,
   onResolve,
+  onDelete,
 }: {
   state: State;
   vehicleId: string;
   search: string;
   onResolve: (r: Reading, context: string) => void;
+  onDelete?: (r: Reading) => void;
 }) {
   const groups = mileageConflictGroups(s.readings).filter((g) => {
     const v = s.vehicles.find((v) => v.id === g.vehicleId);
@@ -109,6 +111,14 @@ export function MileageConflicts({
                   {g.readings.map((r) => (
                     <tr key={r.id}>
                       <td>
+                        {onDelete && (
+                          <button
+                            className="text-button"
+                            onClick={() => onDelete(r)}
+                          >
+                            Smazat odpočet
+                          </button>
+                        )}
                         <strong>{readingLabel(s, r)}</strong>
                       </td>
                       <td>{date(r.date)}</td>

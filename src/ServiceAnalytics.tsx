@@ -118,41 +118,11 @@ export function ServiceAnalytics({
           </table>
         </div>
       </section>
-      <section className="panel interval-panel">
-        <div className="panel-heading">
-          <h2>Intervaly provedených výměn</h2>
-          <span className="muted">Alespoň dva doložené záznamy</span>
-        </div>
-        {rows
-          .filter((r) => r.records.length)
-          .map((r) => (
-            <div key={r.v.id}>
-              <h3>
-                {r.v.brand} {r.v.model}
-              </h3>
-              {[
-                ...new Set(
-                  r.records.flatMap((s) => s.items.map((i) => i.name)),
-                ),
-              ].map((name) => {
-                const intervals = replacementIntervals(r.records, name);
-                return (
-                  <p key={name}>
-                    <strong>{name}:</strong>{" "}
-                    {intervals
-                      ? intervals
-                          .map(
-                            (i) =>
-                              `${i.days} dní / ${i.km === null ? "km neznámé" : i.km + " km"}`,
-                          )
-                          .join("; ")
-                      : "Nedostatek údajů pro interval výměn."}
-                  </p>
-                );
-              })}
-            </div>
-          ))}
-      </section>
+      <p className="record-note">
+        Počty a intervaly potvrzených výměn podle vozidla najdete v části Díly a
+        úkony. Historické zásahy bez potvrzené výměny se do intervalu
+        neodhadují.
+      </p>
     </>
   );
 }

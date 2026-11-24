@@ -6,6 +6,7 @@ import { once } from "node:events";
 import { fileURLToPath } from "node:url";
 import { createApp } from "../server/app.ts";
 import { Store } from "../server/store.ts";
+import { today } from "../src/domain.ts";
 const store = new Store(":memory:"),
   app = createApp(store);
 const fixture = store.load();
@@ -14,6 +15,17 @@ fixture.services[0].source = {
   id: "500",
   capturedAt: new Date().toISOString(),
 };
+fixture.services[0].date = today();
+fixture.services[0].km = 148300;
+fixture.readings.push({
+  id: "service-fixture",
+  vehicleId: "v1",
+  source: "service:s1",
+  date: today(),
+  km: 148300,
+  status: "accepted",
+  owner: "admin",
+});
 store.save(fixture);
 app.use(express.static("dist"));
 app.get("/{*path}", (_req, res) =>
@@ -35,6 +47,7 @@ try {
     }),
     errors = [];
   admin.on("pageerror", (e) => errors.push(e.message));
+  admin.setDefaultTimeout(15000);
   await route(admin);
   await admin.goto(base);
   assert.equal(
@@ -76,6 +89,10 @@ try {
     .getByRole("heading", { name: "Upravit servisní záznam", exact: true })
     .waitFor();
   await admin.getByLabel("Celková cena", { exact: false }).fill("4500");
+  await admin.screenshot({
+    path: "data/maintenance-service-editor.png",
+    fullPage: false,
+  });
   await admin.getByRole("button", { name: "Uložit", exact: true }).click();
   await admin.getByRole("dialog").waitFor({ state: "hidden" });
   assert.equal(store.load().services.length, 1);
@@ -87,8 +104,76 @@ try {
     ),
   );
   await admin
+    .getByRole("button", { name: "Upravit servis", exact: true })
+    .click();
+  await admin.getByLabel(/Aktualizovat plán: Výměna motorového oleje/).check();
+  await admin
+    .getByLabel("Interval km pro Výměna motorového oleje", { exact: true })
+    .fill("15000");
+  await admin.getByRole("button", { name: "Uložit", exact: true }).click();
+  await admin.getByRole("dialog").waitFor({ state: "hidden" });
+  assert.equal(store.load().plans.find((p) => p.id === "p1").lastKm, 148300);
+  assert.equal(store.load().plans.find((p) => p.id === "p1").intervalKm, 15000);
+  await admin
+    .locator("nav")
+    .getByRole("button", { name: /^Servisní plány/ })
+    .click();
+  await admin.getByRole("button", { name: /Smazat plán .*oleje/ }).click();
+  await admin.getByLabel("Důvod smazání").fill("Testovací plán");
+  await admin.getByRole("button", { name: "Smazat plán", exact: true }).click();
+  await admin.getByRole("dialog").waitFor({ state: "hidden" });
+  assert.equal(
+    store.load().plans.some((p) => p.id === "p1"),
+    false,
+  );
+  await admin.getByText(/Smazané plány \(/).click();
+  await admin
+    .getByRole("button", { name: "Obnovit plán", exact: true })
+    .click();
+  await admin
+    .locator("nav")
+    .getByRole("button", { name: "Díly a úkony", exact: true })
+    .click();
+  assert.ok(
+    (await admin.locator(".catalog-record").allTextContents()).some((x) =>
+      x.includes("Výměna motorového oleje"),
+    ),
+  );
+  await admin.screenshot({
+    path: "data/maintenance-catalog-desktop.png",
+    fullPage: false,
+  });
+  await admin.setViewportSize({ width: 390, height: 844 });
+  assert.equal(
+    await admin.evaluate(
+      () => document.documentElement.scrollWidth > window.innerWidth,
+    ),
+    false,
+  );
+  await admin.screenshot({
+    path: "data/maintenance-catalog-mobile.png",
+    fullPage: false,
+  });
+  await admin.setViewportSize({ width: 1440, height: 1050 });
+  await admin
     .locator("nav")
     .getByRole("button", { name: "Závady a hlášení", exact: true })
+    .click();
+  const readingsBeforeDelete = store.load().readings.length;
+  await admin
+    .getByRole("button", { name: "Smazat odpočet", exact: true })
+    .first()
+    .click();
+  await admin.getByLabel("Důvod smazání").fill("Test chybného odpočtu");
+  await admin
+    .getByRole("dialog")
+    .getByRole("button", { name: "Smazat odpočet", exact: true })
+    .click();
+  await admin.getByRole("dialog").waitFor({ state: "hidden" });
+  assert.equal(store.load().readings.length, readingsBeforeDelete - 1);
+  await admin.getByText(/Smazané odpočty \(/).click();
+  await admin
+    .getByRole("button", { name: "Obnovit odpočet", exact: true })
     .click();
   await admin
     .getByRole("button", { name: "Odkaz pro hlášení", exact: true })

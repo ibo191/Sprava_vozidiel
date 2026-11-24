@@ -74,6 +74,34 @@ test("import zachová neznámou cenu, původního učitele a plnou/částečnou 
   assert.equal(s.vehicles[0].brand, "");
   assert.equal(s.vehicles[0].source?.availabilityVerified, false);
 });
+test("opakovaný import neobnoví smazaný samostatný odpočet ani tankovací km", () => {
+  const snap = fixture();
+  snap.readings.rows = [
+    { sourceId: "555", cells: ["3.1.2025", "001 Vozidlo ze zdroje", "250"] },
+  ];
+  const s = importFleet(snap).state;
+  assert.equal(s.readings.length, 3);
+  const u = {
+    id: "mgr",
+    name: "Správce",
+    email: "mgr@example.test",
+    role: "manager" as const,
+    active: true,
+  };
+  for (const r of [...s.readings])
+    applyCommand(
+      s,
+      u,
+      "reading.delete",
+      { id: r.id, reason: "Ověřená chyba" },
+      { password: () => {} },
+    );
+  snap.capturedAt = "2026-11-24T08:00:00.000Z";
+  const again = importFleet(snap, s).state;
+  assert.equal(again.readings.length, 0);
+  assert.equal(again.fuels.length, 2);
+  assert.equal(again.fuels[0].readingExcluded, true);
+});
 test("nedatovaný tachometr nenahrazuje datovaný stav a chybějící cena nedeformuje průměr", () => {
   const { state: s } = importFleet(fixture());
   assert.equal(latestReading(s, s.vehicles[0].id)?.km, 200);

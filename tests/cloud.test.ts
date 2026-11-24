@@ -289,6 +289,62 @@ test("cloud: accountless photo report, private storage, idempotency, manager rol
       ).status,
       409,
     );
+    const readingId = corrected.readings[0].id;
+    assert.equal(
+      (
+        await req(
+          "/command",
+          {
+            action: "reading.delete",
+            payload: { id: readingId, reason: "Test chybných km" },
+          },
+          "admin",
+        )
+      ).status,
+      200,
+    );
+    const withoutReading = await (
+      await req("/state", undefined, "admin")
+    ).json();
+    assert.equal(
+      withoutReading.readings.some((r: any) => r.id === readingId),
+      false,
+    );
+    assert.equal(withoutReading.fuels.length, corrected.fuels.length);
+    assert.equal(
+      (
+        await req(
+          "/command",
+          { action: "reading.restore", payload: { id: readingId } },
+          "admin",
+        )
+      ).status,
+      200,
+    );
+    const planId = corrected.plans[0].id;
+    assert.equal(
+      (
+        await req(
+          "/command",
+          {
+            action: "plan.delete",
+            payload: { id: planId, reason: "Zkušební plán" },
+          },
+          "admin",
+        )
+      ).status,
+      200,
+    );
+    assert.equal(
+      (
+        await req(
+          "/command",
+          { action: "plan.restore", payload: { id: planId } },
+          "admin",
+        )
+      ).status,
+      200,
+    );
     const bad = await req("/health", undefined, undefined, {
       Origin: "https://evil.example",
     });

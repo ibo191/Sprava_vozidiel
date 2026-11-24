@@ -348,11 +348,18 @@ export function importFleet(input: unknown, existing?: State) {
   }
   // Evaluate all observations symmetrically. Never choose an arbitrary winner for
   // conflicting days or assume an order within a day when no time is provided.
+  const removedSources = new Set(
+    (s.deletedReadings ?? []).map((x) => x.reading.source),
+  );
   const candidates = [
     ...s.readings.filter((r) => r.status === "accepted"),
-    ...importedReadings.map((r) => ({ ...r, status: "accepted" as const })),
+    ...importedReadings
+      .filter((r) => !removedSources.has(r.source))
+      .map((r) => ({ ...r, status: "accepted" as const })),
   ];
-  for (const r of importedReadings) {
+  for (const r of importedReadings.filter(
+    (r) => !removedSources.has(r.source),
+  )) {
     r.status = chronological(
       candidates.filter((c) => c.id !== r.id),
       r.vehicleId,

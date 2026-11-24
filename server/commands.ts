@@ -11,9 +11,11 @@ import {
   dateSchema,
   type State,
   type User,
+  type Service,
 } from "../src/domain.ts";
 import { HttpError } from "./http-error.ts";
 import { parseAttachment } from "./attachments.ts";
+import { canonicalEntry, itemOperation, itemKey } from "../src/catalog.ts";
 const id = () => crypto.randomUUID();
 function assert(ok: unknown, message: string, status = 400): asserts ok {
   if (!ok) throw new HttpError(status, message);
@@ -137,6 +139,92 @@ export function applyCommand(
           "U motorového vozidla zadejte počáteční km a datum.",
         );
     }
+  } else if (action === "vehicle.clearUndatedKm") {
+    requireManager();
+    const b = z
+      .object({ id: z.string(), reason: z.string().trim().min(3).max(1000) })
+      .parse(payload);
+    const v = vehicle(b.id);
+    assert(
+      v.source?.undatedKm != null,
+      "Nedatovaný stav km už není evidován.",
+      404,
+    );
+    const before = structuredClone(v);
+    v.source!.undatedKm = null;
+    audit("vehicle", v.id, before, { ...v, reason: b.reason });
+  } else if (action === "reading.delete") {
+    requireManager();
+    const b = z
+      .object({ id: z.string(), reason: z.string().trim().min(3).max(1000) })
+      .parse(payload);
+    const r = s.readings.find((r) => r.id === b.id);
+    assert(r, "Odpočet neexistuje.", 404);
+    (s.deletedReadings ??= []).push({
+      reading: structuredClone(r),
+      deletedAt: new Date().toISOString(),
+      deletedBy: u.id,
+      reason: b.reason,
+    });
+    s.readings = s.readings.filter((x) => x.id !== r.id);
+    const fuel = s.fuels.find((f) => f.id === r.source);
+    if (fuel) {
+      const prior = structuredClone(fuel);
+      fuel.readingExcluded = true;
+      fuel.reliable = false;
+      audit("fuel", fuel.id, prior, fuel);
+    }
+    const service = s.services.find((x) => "service:" + x.id === r.source);
+    if (service) {
+      const prior = structuredClone(service);
+      service.readingExcluded = true;
+      service.revision = (service.revision ?? 0) + 1;
+      audit("service", service.id, prior, service);
+    }
+    for (const p of s.plans)
+      if (
+        p.vehicleId === r.vehicleId &&
+        ((!!service && p.lastServiceId === service.id) ||
+          (p.lastDate === r.date && p.lastKm === r.km))
+      ) {
+        const prior = structuredClone(p);
+        p.reviewServiceId = service?.id ?? "reading:" + r.id;
+        audit("plan", p.id, prior, p);
+      }
+    audit("reading", r.id, r, { deleted: true, reason: b.reason });
+  } else if (action === "reading.restore") {
+    requireManager();
+    const b = z.object({ id: z.string() }).parse(payload);
+    const entry = s.deletedReadings?.find((x) => x.reading.id === b.id);
+    assert(entry, "Smazaný odpočet nenalezen.", 404);
+    const r = structuredClone(entry.reading);
+    assert(
+      !s.readings.some(
+        (x) => x.source === r.source && x.vehicleId === r.vehicleId,
+      ),
+      "Zdroj už má novější odpočet. Smazaný údaj nelze obnovit.",
+      409,
+    );
+    r.status = chronological(s.readings, r.vehicleId, r.date, r.km, r.source)
+      ? "accepted"
+      : "conflict";
+    s.readings.push(r);
+    s.deletedReadings = s.deletedReadings!.filter((x) => x !== entry);
+    const fuel = s.fuels.find((f) => f.id === r.source);
+    if (fuel) {
+      const before = structuredClone(fuel);
+      delete fuel.readingExcluded;
+      fuel.reliable = r.status === "accepted";
+      audit("fuel", fuel.id, before, fuel);
+    }
+    const service = s.services.find((x) => "service:" + x.id === r.source);
+    if (service) {
+      const before = structuredClone(service);
+      delete service.readingExcluded;
+      service.revision = (service.revision ?? 0) + 1;
+      audit("service", service.id, before, service);
+    }
+    audit("reading", r.id, { deleted: true }, r);
   } else if (action === "reading.resolve") {
     requireManager();
     const b = readingSchema.extend({ id: z.string() }).parse(payload);
@@ -154,11 +242,73 @@ export function applyCommand(
       audit("fuel", f.id, { ...f }, b);
       Object.assign(f, { date: b.date, km: b.km, reliable: true });
     }
+  } else if (action === "plan.delete") {
+    requireManager();
+    const b = z
+      .object({ id: z.string(), reason: z.string().trim().min(3).max(1000) })
+      .parse(payload);
+    const p = s.plans.find((p) => p.id === b.id);
+    assert(p, "Servisní plán neexistuje.", 404);
+    const deleted = {
+      plan: structuredClone(p),
+      deletedAt: new Date().toISOString(),
+      deletedBy: u.id,
+      reason: b.reason,
+      pendingServiceIds: s.services
+        .filter((r) => r.pendingPlanIds.includes(p.id))
+        .map((r) => r.id),
+    };
+    (s.deletedPlans ??= []).push(deleted);
+    s.plans = s.plans.filter((x) => x.id !== p.id);
+    for (const r of s.services)
+      r.pendingPlanIds = r.pendingPlanIds.filter((id) => id !== p.id);
+    audit("plan", p.id, p, { deleted: true, reason: b.reason });
+  } else if (action === "plan.restore") {
+    requireManager();
+    const b = z.object({ id: z.string() }).parse(payload);
+    const saved = s.deletedPlans?.find((x) => x.plan.id === b.id);
+    assert(saved, "Smazaný plán nenalezen.", 404);
+    assert(!s.plans.some((p) => p.id === b.id), "Plán už existuje.", 409);
+    s.plans.push(saved.plan);
+    const linked = s.services.find((r) => r.id === saved.plan.lastServiceId);
+    if (
+      linked &&
+      (linked.date !== saved.plan.lastDate ||
+        linked.km !== saved.plan.lastKm ||
+        linked.readingExcluded)
+    )
+      saved.plan.reviewServiceId = linked.id;
+    for (const id of saved.pendingServiceIds) {
+      const r = s.services.find((r) => r.id === id);
+      if (
+        r &&
+        r.vehicleId === saved.plan.vehicleId &&
+        r.items.some(
+          (i) =>
+            canonicalEntry(s, i.kind, i.name).id ===
+            canonicalEntry(
+              s,
+              saved.plan.catalogKind ?? "action",
+              saved.plan.action,
+            ).id,
+        ) &&
+        !r.pendingPlanIds.includes(b.id)
+      )
+        r.pendingPlanIds.push(b.id);
+    }
+    s.deletedPlans = s.deletedPlans!.filter((x) => x !== saved);
+    audit("plan", b.id, { deleted: true }, saved.plan);
   } else if (action === "plan.save") {
     requireManager();
     const b = planSchema.parse(payload);
     vehicle(b.vehicleId);
     const existing = s.plans.find((p) => p.id === payload.id);
+    if (payload.id)
+      assert(
+        existing,
+        "Plán byl smazán nebo neexistuje. Obnovte evidenci.",
+        409,
+      );
     const p = { id: existing?.id ?? id(), ...b };
     audit("plan", p.id, existing ?? null, p);
     if (existing) {
@@ -256,11 +406,45 @@ export function applyCommand(
         "Servis je propojen s hlášením závady. Nejprve zrušte propojení, potom změňte vozidlo.",
       );
     }
+    b.items = b.items.map((item) => {
+      const entry = canonicalEntry(s, item.kind, item.name);
+      const prior =
+        existing?.items.find(
+          (old) =>
+            canonicalEntry(s, old.kind, old.name).id === entry.id &&
+            (old.name === item.name || old.originalName === item.name),
+        ) ??
+        existing?.items.find(
+          (old) => canonicalEntry(s, old.kind, old.name).id === entry.id,
+        );
+      return {
+        ...item,
+        kind: entry.kind,
+        name: entry.name,
+        catalogId: entry.id,
+        originalName:
+          prior?.originalName ??
+          (prior && prior.name !== entry.name
+            ? prior.name
+            : item.name !== entry.name
+              ? item.name
+              : undefined),
+        originalKind:
+          prior?.originalKind ??
+          (item.kind !== entry.kind ? item.kind : undefined),
+        operation:
+          item.operation ?? (prior ? itemOperation(prior) : "unspecified"),
+      };
+    });
     const matches = s.plans
       .filter(
         (p) =>
           p.vehicleId === b.vehicleId &&
-          b.items.some((i) => i.kind === "action" && i.name === p.action),
+          b.items.some(
+            (i) =>
+              canonicalEntry(s, i.kind, i.name).id ===
+              canonicalEntry(s, p.catalogKind ?? "action", p.action).id,
+          ),
       )
       .map((p) => p.id);
     const before = existing ? structuredClone(existing) : null;
@@ -271,17 +455,17 @@ export function applyCommand(
         existing.vehicleId !== b.vehicleId ||
         JSON.stringify(
           existing.items
-            .filter((i) => i.kind === "action")
-            .map((i) => i.name)
+            .map((i) => canonicalEntry(s, i.kind, i.name).id)
             .sort(),
         ) !==
           JSON.stringify(
-            b.items
-              .filter((i) => i.kind === "action")
-              .map((i) => i.name)
-              .sort(),
+            b.items.map((i) => canonicalEntry(s, i.kind, i.name).id).sort(),
           ));
-    const service = existing ?? { id: id(), ...b, pendingPlanIds: matches };
+    const service: Service = existing ?? {
+      id: id(),
+      ...b,
+      pendingPlanIds: matches,
+    };
     if (existing) {
       Object.assign(service, b, {
         revision: (existing.revision ?? 0) + 1,
@@ -306,7 +490,16 @@ export function applyCommand(
           }
         }
     } else s.services.push(service);
-    if (!existing || basisChanged) {
+    if (payload.restoreReading === true && service.readingExcluded) {
+      delete service.readingExcluded;
+      s.deletedReadings = s.deletedReadings?.filter(
+        (x) => x.reading.source !== "service:" + service.id,
+      );
+    }
+    if (
+      (!existing || basisChanged || payload.restoreReading === true) &&
+      !service.readingExcluded
+    ) {
       const source = "service:" + service.id;
       const previous = s.readings.find((r) => r.source === source);
       const readingBefore = previous ? structuredClone(previous) : null;
@@ -323,6 +516,118 @@ export function applyCommand(
           readingBefore,
           readingAfter,
         );
+    }
+    if (payload.followUps !== undefined) {
+      const followUps = z
+        .array(
+          z.object({
+            itemIndex: z.number().int().nonnegative(),
+            planId: z.string().nullable().optional(),
+            intervalKm: z.number().int().positive().nullable(),
+            intervalMonths: z.number().int().positive().max(240).nullable(),
+            nextDate: dateSchema.nullable(),
+            nextKm: z.number().int().nonnegative().nullable(),
+            leadKm: z.number().int().nonnegative(),
+            leadDays: z.number().int().nonnegative(),
+            responsible: z.string().trim().min(1).max(500),
+          }),
+        )
+        .max(50)
+        .parse(payload.followUps);
+      const used = new Set<string>();
+      for (const follow of followUps) {
+        const item = service.items[follow.itemIndex];
+        assert(item, "Položka dalšího servisu neexistuje.");
+        const entry = canonicalEntry(s, item.kind, item.name);
+        assert(
+          !used.has(entry.id),
+          "Pro stejný úkon či díl zadejte jen jeden další servis.",
+        );
+        used.add(entry.id);
+        const old = follow.planId
+          ? s.plans.find((p) => p.id === follow.planId)
+          : undefined;
+        if (follow.planId)
+          assert(
+            old &&
+              old.vehicleId === service.vehicleId &&
+              canonicalEntry(s, old.catalogKind ?? "action", old.action).id ===
+                entry.id,
+            "Vybraný plán neodpovídá vozidlu a položce.",
+          );
+        if (!old)
+          assert(
+            !s.plans.some(
+              (p) =>
+                p.vehicleId === service.vehicleId &&
+                canonicalEntry(s, p.catalogKind ?? "action", p.action).id ===
+                  entry.id,
+            ),
+            "Pro tuto položku již existuje plán. Vyberte aktualizaci existujícího plánu.",
+            409,
+          );
+        const reading = s.readings.find(
+          (r) =>
+            r.source === "service:" + service.id && r.status === "accepted",
+        );
+        const baseKm = reading?.km ?? null;
+        const draft = planSchema.parse({
+          vehicleId: service.vehicleId,
+          action: entry.name,
+          responsible: follow.responsible,
+          lastDate: service.date,
+          lastKm: baseKm,
+          intervalKm: follow.intervalKm,
+          intervalMonths: follow.intervalMonths,
+          nextDate: follow.nextDate,
+          nextKm: follow.nextKm,
+          leadKm: follow.leadKm,
+          leadDays: follow.leadDays,
+          booking: null,
+        });
+        if (draft.nextDate)
+          assert(
+            draft.nextDate > service.date,
+            "Další datum musí následovat po servisu.",
+          );
+        if (draft.nextKm !== null && baseKm !== null)
+          assert(
+            draft.nextKm > baseKm,
+            "Další km musí být vyšší než km servisu.",
+          );
+        const prior = old ? structuredClone(old) : null;
+        const plan = {
+          id: old?.id ?? id(),
+          ...draft,
+          lastServiceId: service.id,
+          catalogKind: entry.kind,
+        };
+        const missingKm =
+          draft.intervalKm !== null && baseKm === null && draft.nextKm === null;
+        if (old && missingKm) {
+          // Preserve the known deadline until the new service has a reliable km baseline.
+          old.reviewServiceId = service.id;
+        } else if (old) {
+          assert(
+            !old.lastDate || service.date >= old.lastDate,
+            "Historický servis nesmí přepsat novější základ plánu.",
+          );
+          assert(
+            old.lastKm === null || baseKm === null || baseKm >= old.lastKm,
+            "Servis nesmí snížit km základu plánu.",
+          );
+          Object.assign(old, plan);
+          delete old.reviewServiceId;
+        } else s.plans.push(plan);
+        if (missingKm) {
+          if (!service.pendingPlanIds.includes(plan.id))
+            service.pendingPlanIds.push(plan.id);
+        } else
+          service.pendingPlanIds = service.pendingPlanIds.filter(
+            (x) => x !== plan.id,
+          );
+        audit("plan", plan.id, prior, old ?? plan);
+      }
     }
     audit("service", service.id, before, service);
     result = service;
@@ -347,6 +652,10 @@ export function applyCommand(
         service.pendingPlanIds.includes(p.id) &&
         p.vehicleId === service.vehicleId,
       "Návrh aktualizace neexistuje.",
+    );
+    assert(
+      !service.readingExcluded || b.lastKm === null,
+      "Odpočet tohoto servisu byl vyřazen. Nejdříve jej opravte a obnovte, nebo potvrďte pouze časový plán bez km.",
     );
     assert(
       p.intervalKm === null || b.lastKm !== null,
