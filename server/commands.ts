@@ -9,6 +9,7 @@ import {
   serviceSchema,
   issueSchema,
   dateSchema,
+  insurancePayoutSchema,
   type State,
   type User,
   type Service,
@@ -107,6 +108,20 @@ export function applyCommand(
     const before = structuredClone(v);
     v.active = false;
     v.retirement = { date: b.date, reason: b.reason, actor: u.id };
+    audit("vehicle", v.id, before, v);
+  } else if (action === "vehicle.stk") {
+    requireManager();
+    const b = z
+      .object({
+        id: z.string(),
+        stkValidUntil: dateSchema.nullable(),
+        stkLeadDays: z.number().int().min(0).max(365),
+      })
+      .parse(payload);
+    const v = vehicle(b.id),
+      before = structuredClone(v);
+    v.stkValidUntil = b.stkValidUntil;
+    v.stkLeadDays = b.stkLeadDays;
     audit("vehicle", v.id, before, v);
   } else if (action === "vehicle.save") {
     requireManager();
@@ -350,10 +365,21 @@ export function applyCommand(
         status: z.enum(["new", "in_progress", "needs_info", "resolved"]),
         response: z.string().max(3000),
         serviceId: z.string().nullable(),
+        insuranceCase: z.boolean().optional(),
+        insurancePayout: insurancePayoutSchema.optional(),
       })
       .parse(payload);
     const i = s.issues.find((i) => i.id === b.id);
     assert(i, "Závada nenalezena.");
+    const insured = b.insuranceCase ?? i.insuranceCase ?? false;
+    const payout =
+      b.insurancePayout === undefined
+        ? (i.insurancePayout ?? null)
+        : b.insurancePayout;
+    assert(
+      insured || payout === null,
+      "Plnění lze evidovat pouze u pojistné události.",
+    );
     if (b.serviceId)
       assert(
         s.services.some(
@@ -362,7 +388,7 @@ export function applyCommand(
         "Servis musí patřit stejnému vozidlu.",
       );
     audit("issue", i.id, { ...i }, b);
-    Object.assign(i, b);
+    Object.assign(i, b, { insuranceCase: insured, insurancePayout: payout });
   } else if (action === "issue.supplement") {
     const b = z
       .object({

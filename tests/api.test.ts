@@ -139,6 +139,8 @@ test("jméno je povinné; falešný vlastník nebo stav z těla se nepřijme", (
       {
         ...report(),
         reporterName: " Jan ",
+        insuranceCase: true,
+        insurancePayout: 50000,
         owner: "admin",
         status: "resolved",
       },
@@ -148,6 +150,8 @@ test("jméno je povinné; falešný vlastník nebo stav z těla se nepřijme", (
     assert.equal(r.status, 201);
     const i = store.load().issues.at(-1)!;
     assert.equal(i.reporterName, "Jan");
+    assert.equal(i.insuranceCase, true);
+    assert.equal(i.insurancePayout, null);
     assert.equal(i.owner, null);
     assert.equal(i.status, "new");
   }));

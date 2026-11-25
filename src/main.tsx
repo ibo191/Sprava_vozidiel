@@ -31,6 +31,7 @@ import {
   Camera,
 } from "lucide-react";
 import {
+  inspectionStatus,
   latestReading,
   planStatus,
   statusLabels,
@@ -47,6 +48,8 @@ import {
   type Issue,
 } from "./domain";
 import "./styles.css";
+import { VehicleHistory } from "./VehicleHistory";
+import { InspectionAlerts } from "./InspectionAlerts";
 import { MileageReadings } from "./MileageReadings";
 import { ServiceCatalog } from "./ServiceCatalog";
 import { FollowUpEditor } from "./FollowUpEditor";
@@ -218,6 +221,8 @@ function App() {
         "U nebezpečné závady vozidlo odstavte a ihned kontaktujte správce.",
       action: "issue.save",
       initial: {
+        insuranceCase: false,
+        insurancePayout: null,
         vehicleId: currentVehicle,
         kind: "fault",
         description: "",
@@ -237,6 +242,13 @@ function App() {
           ],
         },
         input("description", "Popis závady nebo nehody", "textarea"),
+        input("insuranceCase", "Pojistná událost", "checkbox", false),
+        input(
+          "insurancePayout",
+          "Pojistné plnění od pojišťovny (Kč, prázdné = neznámé)",
+          "number",
+          false,
+        ),
         {
           name: "severity",
           label: "Závažnost",
@@ -268,13 +280,35 @@ function App() {
         else notify("Hlášení přijato.");
       },
     });
+  const inspectionDialog = (v: Vehicle) =>
+    setDialog({
+      title: "Platnost STK",
+      subtitle: `${v.brand} ${v.model} · ${v.plate}. Zadejte datum podle dokladu; aplikace neodvozuje zákonný interval.`,
+      action: "vehicle.stk",
+      initial: {
+        id: v.id,
+        stkValidUntil: v.stkValidUntil ?? null,
+        stkLeadDays: v.stkLeadDays ?? 30,
+      },
+      fields: [
+        input("stkValidUntil", "STK platná do", "date", false),
+        input("stkLeadDays", "Upozornit předem (dny)", "number"),
+      ],
+    });
   const vehicleDialog = (v?: Vehicle) =>
     setDialog({
       title: v ? "Upravit vozidlo" : "Přidat vozidlo",
       action: "vehicle.save",
       initial: v
-        ? { ...v, availabilityVerified: v.source?.availabilityVerified ?? true }
+        ? {
+            ...v,
+            stkValidUntil: v.stkValidUntil ?? null,
+            stkLeadDays: v.stkLeadDays ?? 30,
+            availabilityVerified: v.source?.availabilityVerified ?? true,
+          }
         : {
+            stkValidUntil: null,
+            stkLeadDays: 30,
             brand: "",
             model: "",
             year: 2022,
@@ -311,6 +345,8 @@ function App() {
               input("date", "Datum odečtu", "date"),
             ]
           : []),
+        input("stkValidUntil", "STK platná do", "date", false),
+        input("stkLeadDays", "STK upozornit předem (dny)", "number"),
         input("active", "Aktivní vozidlo", "checkbox", false),
         input("unavailable", "Vozidlo je nepoužitelné", "checkbox", false),
         ...(v?.source
@@ -446,7 +482,11 @@ function App() {
     setDialog({
       title: "Zpracovat hlášení závady",
       action: "issue.review",
-      initial: { ...i },
+      initial: {
+        ...i,
+        insuranceCase: i.insuranceCase ?? false,
+        insurancePayout: i.insurancePayout ?? null,
+      },
       fields: [
         {
           name: "status",
@@ -458,6 +498,13 @@ function App() {
           })),
         },
         input("response", "Odpověď správce", "textarea", false),
+        input("insuranceCase", "Pojistná událost", "checkbox", false),
+        input(
+          "insurancePayout",
+          "Pojistné plnění od pojišťovny (Kč, prázdné = neznámé)",
+          "number",
+          false,
+        ),
         {
           name: "serviceId",
           label: "Propojit se servisem",
@@ -999,6 +1046,7 @@ function App() {
                       setVehicleId(i.vehicleId);
                     }}
                   />
+                  <InspectionAlerts state={s} onEdit={inspectionDialog} />
                   <div className="summary-grid">
                     <Stat
                       title="Aktivní vozidla"
@@ -1314,6 +1362,16 @@ function App() {
               )}
               {page === "vehicles" && (
                 <>
+                  {vehicleId !== "all" && vehicle(vehicleId) && (
+                    <VehicleHistory
+                      key={vehicleId}
+                      vehicle={vehicle(vehicleId)}
+                      state={s}
+                      onEdit={serviceDialog}
+                      onInspection={inspectionDialog}
+                      onClose={() => setVehicleId("all")}
+                    />
+                  )}
                   <div
                     className="category-tabs"
                     role="group"
@@ -1375,7 +1433,19 @@ function App() {
                                   v={v}
                                   state={s}
                                   status={vehicleStatus(v.id)}
-                                  onClick={() => setVehicleId(v.id)}
+                                  onClick={() => {
+                                    setVehicleId(v.id);
+                                    setTimeout(
+                                      () =>
+                                        document
+                                          .querySelector(".vehicle-history")
+                                          ?.scrollIntoView({
+                                            behavior: "smooth",
+                                            block: "start",
+                                          }),
+                                      0,
+                                    );
+                                  }}
                                 />
                                 <div className="vehicle-actions">
                                   {admin && (
@@ -1384,6 +1454,14 @@ function App() {
                                       onClick={() => vehicleDialog(v)}
                                     >
                                       Upravit vozidlo
+                                    </button>
+                                  )}
+                                  {admin && (
+                                    <button
+                                      className="text-button"
+                                      onClick={() => inspectionDialog(v)}
+                                    >
+                                      Platnost STK
                                     </button>
                                   )}
                                   {admin && v.active && (
@@ -1545,52 +1623,6 @@ function App() {
               {page === "fuels" && (
                 <ImportedFuel state={s} vehicleId={vehicleId} search={search} />
               )}
-              {page === "issues" && admin && (
-                <MileageReadings
-                  state={s}
-                  vehicleId={vehicleId}
-                  search={search}
-                  onDelete={deleteReadingDialog}
-                  onDeleteUndated={(id) =>
-                    setDialog({
-                      title: "Smazat nedatovaný stav km",
-                      subtitle:
-                        "Původní hodnota zůstane v historii změn vozidla.",
-                      action: "vehicle.clearUndatedKm",
-                      initial: { id, reason: "" },
-                      fields: [input("reason", "Důvod smazání", "textarea")],
-                    })
-                  }
-                  onRestore={async (id) => {
-                    try {
-                      await command("reading.restore", { id });
-                      notify("Odpočet obnoven; chronologie ověřena.");
-                    } catch (e) {
-                      notify((e as Error).message);
-                    }
-                  }}
-                />
-              )}
-              {page === "issues" && admin && (
-                <MileageConflicts
-                  state={s}
-                  vehicleId={vehicleId}
-                  search={search}
-                  onDelete={deleteReadingDialog}
-                  onResolve={(r, context) =>
-                    setDialog({
-                      title: "Prověřit rozporný odečet",
-                      subtitle: context,
-                      action: "reading.resolve",
-                      initial: { ...r },
-                      fields: [
-                        input("date", "Datum odečtu", "date"),
-                        input("km", "Správný stav km", "number"),
-                      ],
-                    })
-                  }
-                />
-              )}
               {page === "issues" && (
                 <div className="issue-grid">
                   {s.issues
@@ -1598,6 +1630,13 @@ function App() {
                       (i) =>
                         (vehicleId === "all" || i.vehicleId === vehicleId) &&
                         matchVehicle(vehicle(i.vehicleId)),
+                    )
+                    .reverse()
+                    .sort(
+                      (a, b) =>
+                        Number(a.status === "resolved") -
+                          Number(b.status === "resolved") ||
+                        b.date.localeCompare(a.date),
                     )
                     .map((i) => (
                       <section className="panel issue-card" key={i.id}>
@@ -1635,6 +1674,17 @@ function App() {
                           </span>
                         </div>
                         <p>{i.description}</p>
+                        {i.insuranceCase && (
+                          <div className="insurance-summary">
+                            <strong>Pojistná událost</strong>
+                            <span>
+                              Plnění od pojišťovny:{" "}
+                              {i.insurancePayout == null
+                                ? "Dosud neuvedeno"
+                                : money(i.insurancePayout)}
+                            </span>
+                          </div>
+                        )}
                         {i.immobilize && (
                           <div className="danger-text">
                             Vážná závada · Vozidlo nepoužívat, kontaktovat
@@ -1713,6 +1763,52 @@ function App() {
                     <Empty text="Zatím žádná hlášení závad vozidel." />
                   )}
                 </div>
+              )}
+              {page === "issues" && admin && (
+                <MileageReadings
+                  state={s}
+                  vehicleId={vehicleId}
+                  search={search}
+                  onDelete={deleteReadingDialog}
+                  onDeleteUndated={(id) =>
+                    setDialog({
+                      title: "Smazat nedatovaný stav km",
+                      subtitle:
+                        "Původní hodnota zůstane v historii změn vozidla.",
+                      action: "vehicle.clearUndatedKm",
+                      initial: { id, reason: "" },
+                      fields: [input("reason", "Důvod smazání", "textarea")],
+                    })
+                  }
+                  onRestore={async (id) => {
+                    try {
+                      await command("reading.restore", { id });
+                      notify("Odpočet obnoven; chronologie ověřena.");
+                    } catch (e) {
+                      notify((e as Error).message);
+                    }
+                  }}
+                />
+              )}
+              {page === "issues" && admin && (
+                <MileageConflicts
+                  state={s}
+                  vehicleId={vehicleId}
+                  search={search}
+                  onDelete={deleteReadingDialog}
+                  onResolve={(r, context) =>
+                    setDialog({
+                      title: "Prověřit rozporný odečet",
+                      subtitle: context,
+                      action: "reading.resolve",
+                      initial: { ...r },
+                      fields: [
+                        input("date", "Datum odečtu", "date"),
+                        input("km", "Správný stav km", "number"),
+                      ],
+                    })
+                  }
+                />
               )}
               {page === "services" && (
                 <div className="service-list">
@@ -2223,6 +2319,17 @@ function VehicleCard({
         <span className="plate">{v.plate}</span>
         <span>{v.year}</span>
       </div>
+      <div className={"vehicle-stk " + inspectionStatus(v).status}>
+        <CalendarDays size={15} />
+        <span>
+          STK: {v.stkValidUntil ? date(v.stkValidUntil) : "platnost neuvedena"}
+          {inspectionStatus(v).status === "overdue"
+            ? " · PO PLATNOSTI"
+            : inspectionStatus(v).status === "soon"
+              ? " · blíží se konec"
+              : ""}
+        </span>
+      </div>
       <div className="odometer">
         <Gauge size={16} />
         <strong>
@@ -2298,6 +2405,7 @@ function FormDialog({
     setValues((p) => ({
       ...p,
       [k]: v,
+      ...(k === "insuranceCase" && !v ? { insurancePayout: null } : {}),
       ...(k === "items" &&
       (v.length !== p.items.length ||
         v.some(
@@ -2380,126 +2488,131 @@ function FormDialog({
         </div>
         <form onSubmit={submit}>
           <div className="form-grid">
-            {d.fields.map((f) => (
-              <label
-                key={f.name}
-                className={
-                  ["textarea", "file", "checkbox"].includes(f.type ?? "")
-                    ? "wide " + (f.type === "checkbox" ? "checkbox-label" : "")
-                    : ""
-                }
-              >
-                {f.type !== "checkbox" && (
-                  <span>
-                    {f.label}
-                    {f.required && <b> *</b>}
-                  </span>
-                )}
-                {f.type === "select" ? (
-                  <select
-                    value={values[f.name] ?? ""}
-                    onChange={(e) => set(f.name, e.target.value)}
-                    required={f.required}
-                  >
-                    {f.options?.map((o) => (
-                      <option key={o.value} value={o.value}>
-                        {o.label}
-                      </option>
-                    ))}
-                  </select>
-                ) : f.type === "textarea" ? (
-                  <textarea
-                    value={values[f.name] ?? ""}
-                    onChange={(e) => set(f.name, e.target.value)}
-                    required={f.required}
-                    rows={3}
-                  />
-                ) : f.type === "checkbox" ? (
-                  <>
-                    <input
-                      type="checkbox"
-                      checked={values[f.name] ?? false}
-                      onChange={(e) => set(f.name, e.target.checked)}
+            {d.fields
+              .filter(
+                (f) => f.name !== "insurancePayout" || values.insuranceCase,
+              )
+              .map((f) => (
+                <label
+                  key={f.name}
+                  className={
+                    ["textarea", "file", "checkbox"].includes(f.type ?? "")
+                      ? "wide " +
+                        (f.type === "checkbox" ? "checkbox-label" : "")
+                      : ""
+                  }
+                >
+                  {f.type !== "checkbox" && (
+                    <span>
+                      {f.label}
+                      {f.required && <b> *</b>}
+                    </span>
+                  )}
+                  {f.type === "select" ? (
+                    <select
+                      value={values[f.name] ?? ""}
+                      onChange={(e) => set(f.name, e.target.value)}
+                      required={f.required}
+                    >
+                      {f.options?.map((o) => (
+                        <option key={o.value} value={o.value}>
+                          {o.label}
+                        </option>
+                      ))}
+                    </select>
+                  ) : f.type === "textarea" ? (
+                    <textarea
+                      value={values[f.name] ?? ""}
+                      onChange={(e) => set(f.name, e.target.value)}
+                      required={f.required}
+                      rows={3}
                     />
-                    <span>{f.label}</span>
-                  </>
-                ) : f.type === "file" ? (
-                  <>
-                    <input
-                      type="file"
-                      ref={attachmentInput}
-                      className={f.camera ? "camera-input" : undefined}
-                      accept={
-                        f.camera
-                          ? "image/png,image/jpeg"
-                          : "image/png,image/jpeg,application/pdf"
-                      }
-                      onChange={chooseFile}
-                    />
-                    {f.camera && (
-                      <span className="photo-actions">
-                        <button
-                          className="button secondary"
-                          type="button"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            attachmentInput.current?.click();
-                          }}
-                        >
-                          Vybrat fotografii
-                        </button>
-                        <button
-                          className="button secondary"
-                          type="button"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            cameraInput.current?.click();
-                          }}
-                        >
-                          <Camera size={18} />
-                          Vyfotit
-                        </button>
-                        <input
-                          ref={cameraInput}
-                          type="file"
-                          accept="image/jpeg,image/png"
-                          capture="environment"
-                          onChange={chooseFile}
-                          className="camera-input"
-                          aria-label="Fotoaparát"
-                        />
-                      </span>
-                    )}
-                    {file && <small>Vybráno: {file.name}</small>}
-                    {preview && (
-                      <img
-                        className="attachment-preview"
-                        src={preview}
-                        alt="Náhled vybrané fotografie"
+                  ) : f.type === "checkbox" ? (
+                    <>
+                      <input
+                        type="checkbox"
+                        checked={values[f.name] ?? false}
+                        onChange={(e) => set(f.name, e.target.checked)}
                       />
-                    )}
-                    <small>
-                      {f.camera
-                        ? "JPG nebo PNG · nejvýše 5 MB"
-                        : "JPG, PNG nebo PDF · nejvýše 5 MB"}
-                      {values.attachmentId
-                        ? " · Původní příloha je zachována"
-                        : ""}
-                    </small>
-                  </>
-                ) : (
-                  <input
-                    type={f.type ?? "text"}
-                    value={values[f.name] ?? ""}
-                    onChange={(e) => set(f.name, e.target.value)}
-                    required={f.required}
-                    step={f.type === "number" ? "any" : undefined}
-                    min={f.type === "number" ? 0 : undefined}
-                    maxLength={f.type === "number" ? undefined : 3000}
-                  />
-                )}
-              </label>
-            ))}
+                      <span>{f.label}</span>
+                    </>
+                  ) : f.type === "file" ? (
+                    <>
+                      <input
+                        type="file"
+                        ref={attachmentInput}
+                        className={f.camera ? "camera-input" : undefined}
+                        accept={
+                          f.camera
+                            ? "image/png,image/jpeg"
+                            : "image/png,image/jpeg,application/pdf"
+                        }
+                        onChange={chooseFile}
+                      />
+                      {f.camera && (
+                        <span className="photo-actions">
+                          <button
+                            className="button secondary"
+                            type="button"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              attachmentInput.current?.click();
+                            }}
+                          >
+                            Vybrat fotografii
+                          </button>
+                          <button
+                            className="button secondary"
+                            type="button"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              cameraInput.current?.click();
+                            }}
+                          >
+                            <Camera size={18} />
+                            Vyfotit
+                          </button>
+                          <input
+                            ref={cameraInput}
+                            type="file"
+                            accept="image/jpeg,image/png"
+                            capture="environment"
+                            onChange={chooseFile}
+                            className="camera-input"
+                            aria-label="Fotoaparát"
+                          />
+                        </span>
+                      )}
+                      {file && <small>Vybráno: {file.name}</small>}
+                      {preview && (
+                        <img
+                          className="attachment-preview"
+                          src={preview}
+                          alt="Náhled vybrané fotografie"
+                        />
+                      )}
+                      <small>
+                        {f.camera
+                          ? "JPG nebo PNG · nejvýše 5 MB"
+                          : "JPG, PNG nebo PDF · nejvýše 5 MB"}
+                        {values.attachmentId
+                          ? " · Původní příloha je zachována"
+                          : ""}
+                      </small>
+                    </>
+                  ) : (
+                    <input
+                      type={f.type ?? "text"}
+                      value={values[f.name] ?? ""}
+                      onChange={(e) => set(f.name, e.target.value)}
+                      required={f.required}
+                      step={f.type === "number" ? "any" : undefined}
+                      min={f.type === "number" ? 0 : undefined}
+                      maxLength={f.type === "number" ? undefined : 3000}
+                    />
+                  )}
+                </label>
+              ))}
           </div>
           {d.extra === "items" && (
             <div className="items-editor">

@@ -56,6 +56,7 @@ export function registerReporting(app: Express, store: Store) {
           requestKey: z.string().uuid(),
           vehicleId: z.string(),
           kind: z.enum(["fault", "accident"]).default("fault"),
+          insuranceCase: z.boolean().default(false),
           description: z.string().trim().min(5).max(3000),
           severity: z.enum(["minor", "serious"]),
           immobilize: z.boolean(),
@@ -71,7 +72,13 @@ export function registerReporting(app: Express, store: Store) {
       if (photo?.mime === "application/pdf")
         throw new HttpError(400, "Přiložte fotografii JPG nebo PNG.");
       const fingerprint = createHash("sha256")
-        .update(JSON.stringify({ ...b, photo }))
+        .update(
+          JSON.stringify({
+            ...b,
+            insuranceCase: b.insuranceCase || undefined,
+            photo,
+          }),
+        )
         .digest("hex");
       const result = store.transaction(() => {
         const old = store.db
@@ -114,6 +121,8 @@ export function registerReporting(app: Express, store: Store) {
           vehicleId: v.id,
           date: today(),
           kind: b.kind,
+          insuranceCase: b.insuranceCase,
+          insurancePayout: null,
           description: b.description,
           severity: b.severity,
           immobilize: b.immobilize,

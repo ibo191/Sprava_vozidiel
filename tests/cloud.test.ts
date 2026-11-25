@@ -178,6 +178,8 @@ test("cloud: accountless photo report, private storage, idempotency, manager rol
       immobilize: true,
       description: "TEST izolovaný, poškozené světlo",
       reporterName: "Testovací instruktor",
+      insuranceCase: true,
+      insurancePayout: 50000,
       photo: {
         name: "photo.png",
         mime: "image/png",
@@ -216,6 +218,8 @@ test("cloud: accountless photo report, private storage, idempotency, manager rol
     );
     assert.ok(issue);
     assert.equal(issue.owner, null);
+    assert.equal(issue.insuranceCase, true);
+    assert.equal(issue.insurancePayout, null);
     assert.deepEqual(state.attachments, []);
     assert.equal((await req("/attachments/" + issue.attachmentId)).status, 401);
     assert.equal(

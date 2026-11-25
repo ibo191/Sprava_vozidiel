@@ -274,6 +274,7 @@ export function createCloudHandler(db: SupabaseClient) {
               requestKey: z.string().uuid(),
               vehicleId: z.string(),
               kind: z.enum(["fault", "accident"]).default("fault"),
+              insuranceCase: z.boolean().default(false),
               description: z.string().trim().min(5).max(3000),
               severity: z.enum(["minor", "serious"]),
               immobilize: z.boolean(),
@@ -292,7 +293,13 @@ export function createCloudHandler(db: SupabaseClient) {
           const photo = b.photo ? parseAttachment(b.photo) : null;
           if (photo?.mime === "application/pdf")
             fail(400, "Přiložte fotografii JPG nebo PNG.");
-          const fingerprint = hash(JSON.stringify({ ...b, photo }));
+          const fingerprint = hash(
+            JSON.stringify({
+              ...b,
+              insuranceCase: b.insuranceCase || undefined,
+              photo,
+            }),
+          );
           const previous = await rpc("fleet_receipt", { p_key: b.requestKey });
           if (previous) {
             if (previous.fingerprint !== fingerprint)
@@ -331,6 +338,8 @@ export function createCloudHandler(db: SupabaseClient) {
                   vehicleId: v!.id,
                   date: today(),
                   kind: b.kind,
+                  insuranceCase: b.insuranceCase,
+                  insurancePayout: null,
                   description: b.description,
                   severity: b.severity,
                   immobilize: b.immobilize,

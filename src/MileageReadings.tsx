@@ -31,7 +31,7 @@ export function MileageReadings({
     deleted = (s.deletedReadings ?? []).filter((x) => match(x.reading));
   const [limit, setLimit] = useState(30);
   return (
-    <section className="panel">
+    <section className="panel mileage-readings">
       <div className="panel-heading">
         <div>
           <h2>Evidence všech odpočtů km</h2>

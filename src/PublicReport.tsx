@@ -12,6 +12,7 @@ export function PublicReport() {
   const [form, setForm] = useState({
       vehicleId: "",
       kind: "fault",
+      insuranceCase: false,
       description: "",
       severity: "minor",
       immobilize: false,
@@ -146,6 +147,7 @@ export function PublicReport() {
                 setForm({
                   vehicleId: "",
                   kind: "fault",
+                  insuranceCase: false,
                   description: "",
                   severity: "minor",
                   immobilize: false,
@@ -243,6 +245,14 @@ export function PublicReport() {
                     Označit vozidlo za nepoužitelné
                   </label>
                 )}
+                <label className="checkbox-label">
+                  <input
+                    type="checkbox"
+                    checked={form.insuranceCase}
+                    onChange={(e) => set("insuranceCase", e.target.checked)}
+                  />
+                  Souvisí s pojistnou událostí
+                </label>
                 <label>
                   Vaše jméno
                   <input

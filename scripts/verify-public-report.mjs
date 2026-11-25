@@ -16,6 +16,7 @@ fixture.services[0].source = {
   capturedAt: new Date().toISOString(),
 };
 fixture.services[0].date = today();
+fixture.issues[0].date = today();
 fixture.services[0].km = 148300;
 fixture.readings.push({
   id: "service-fixture",
@@ -58,6 +59,60 @@ try {
     .getByRole("button", { name: "Přihlásit se", exact: true })
     .click();
   await admin.getByRole("heading", { name: "Přehled flotily" }).waitFor();
+  await admin
+    .locator("nav")
+    .getByRole("button", { name: "Vozidla", exact: true })
+    .click();
+  await admin
+    .locator(".vehicle-card")
+    .filter({
+      has: admin.getByRole("heading", { name: "Škoda Octavia", exact: true }),
+    })
+    .click();
+  await admin
+    .getByRole("region", { name: "Servisní historie vozidla", exact: true })
+    .waitFor();
+  assert.equal(
+    await admin.evaluate(
+      () =>
+        document
+          .querySelector(".vehicle-history")
+          .compareDocumentPosition(
+            document.querySelector(".vehicle-category"),
+          ) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ),
+    4,
+  );
+  await admin
+    .getByRole("button", { name: "Nastavit STK", exact: true })
+    .click();
+  const stkExpiry = new Date(Date.parse(today()) + 7 * 86400000)
+    .toISOString()
+    .slice(0, 10);
+  await admin.getByLabel("STK platná do", { exact: false }).fill(stkExpiry);
+  await admin.getByLabel("Upozornit předem (dny)", { exact: false }).fill("45");
+  await admin.getByRole("button", { name: "Uložit", exact: true }).click();
+  await admin.getByRole("dialog").waitFor({ state: "hidden" });
+  assert.equal(store.load().vehicles[0].stkValidUntil, stkExpiry);
+  await admin.screenshot({
+    path: "data/vehicle-history-stk.png",
+    fullPage: false,
+  });
+  await admin.setViewportSize({ width: 390, height: 844 });
+  assert.equal(
+    await admin.evaluate(
+      () => document.documentElement.scrollWidth > innerWidth,
+    ),
+    false,
+  );
+  await admin.screenshot({
+    path: "data/vehicle-history-stk-mobile.png",
+    fullPage: false,
+  });
+  await admin.setViewportSize({ width: 1440, height: 1050 });
+  await admin
+    .getByRole("button", { name: "Zavřít detail", exact: true })
+    .click();
   assert.equal(
     await admin
       .getByRole("button", { name: "Nové tankování", exact: true })
@@ -197,6 +252,9 @@ try {
     .getByLabel("Popis závady nebo nehody")
     .fill("Testovací hlášení z formuláře bez přihlášení.");
   await page.getByLabel("Vaše jméno").fill("Testovací instruktor");
+  await page
+    .getByLabel("Souvisí s pojistnou událostí", { exact: true })
+    .check();
   await page.getByLabel("Označit vozidlo").check();
   await page
     .locator("input[capture]")
@@ -220,6 +278,7 @@ try {
   assert.equal(store.load().issues.length, 2);
   assert.equal(store.load().users.length, 3);
   assert.equal(store.load().issues.at(-1).owner, null);
+  assert.equal(store.load().issues.at(-1).insuranceCase, true);
   assert.equal((await ctx.request.get(base + "/api/state")).status(), 401);
   assert.equal(
     (
@@ -249,6 +308,35 @@ try {
       "Testovací instruktor",
     ),
   );
+  assert.equal(
+    (await admin.evaluate(
+      () =>
+        document
+          .querySelector(".issue-grid")
+          .compareDocumentPosition(
+            document.querySelector(".mileage-readings"),
+          ) & Node.DOCUMENT_POSITION_FOLLOWING,
+    )) > 0,
+    true,
+  );
+  const card = admin
+    .locator(".issue-card")
+    .filter({ hasText: "Testovací hlášení z formuláře bez přihlášení." });
+  assert.ok(
+    (await admin.locator(".issue-card").first().innerText()).includes(
+      "Testovací hlášení z formuláře bez přihlášení.",
+    ),
+  );
+  await card
+    .getByRole("button", { name: "Zpracovat hlášení", exact: true })
+    .click();
+  await admin
+    .getByLabel("Pojistné plnění od pojišťovny", { exact: false })
+    .fill("12500.75");
+  await admin.getByRole("button", { name: "Uložit", exact: true }).click();
+  await admin.getByRole("dialog").waitFor({ state: "hidden" });
+  assert.equal(store.load().issues.at(-1).insurancePayout, 12500.75);
+  assert.ok((await card.innerText()).includes("12 500,75"));
   await page.getByRole("button", { name: "Nahlásit další závadu" }).click();
   await page.setViewportSize({ width: 1440, height: 1050 });
   await page.screenshot({

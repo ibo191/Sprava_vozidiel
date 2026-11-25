@@ -20,6 +20,8 @@ export type User = {
   active: boolean;
 };
 export type Vehicle = {
+  stkValidUntil?: string | null;
+  stkLeadDays?: number;
   id: string;
   brand: string;
   model: string;
@@ -77,6 +79,8 @@ export type Fuel = {
   source?: SourceRef;
 };
 export type Issue = {
+  insuranceCase?: boolean;
+  insurancePayout?: number | null;
   reporterName?: string | null;
   reporterChannel?: "link" | "account";
   kind?: "fault" | "accident";
@@ -209,6 +213,8 @@ const pastDate = dateSchema.refine(
 const text = z.string().trim().min(1).max(500);
 const nullableKm = z.number().int().min(0).max(10000000).nullable();
 export const vehicleSchema = z.object({
+  stkValidUntil: dateSchema.nullable().optional(),
+  stkLeadDays: z.number().int().min(0).max(365).optional(),
   brand: text,
   model: text,
   year: z
@@ -280,14 +286,41 @@ export const serviceSchema = z.object({
   note: z.string().max(3000),
   attachmentId: z.string().nullable(),
 });
-export const issueSchema = z.object({
-  kind: z.enum(["fault", "accident"]).default("fault"),
-  vehicleId: text,
-  description: z.string().trim().min(5).max(3000),
-  severity: z.enum(["minor", "serious"]),
-  immobilize: z.boolean(),
-  attachmentId: z.string().nullable(),
-});
+export const insurancePayoutSchema = z
+  .number()
+  .nonnegative()
+  .max(1000000000)
+  .refine(
+    (n) => Math.abs(n * 100 - Math.round(n * 100)) < 0.000001,
+    "Zadejte částku nejvýše na dvě desetinná místa",
+  )
+  .nullable();
+export const issueSchema = z
+  .object({
+    insuranceCase: z.boolean().default(false),
+    insurancePayout: insurancePayoutSchema.default(null),
+    kind: z.enum(["fault", "accident"]).default("fault"),
+    vehicleId: text,
+    description: z.string().trim().min(5).max(3000),
+    severity: z.enum(["minor", "serious"]),
+    immobilize: z.boolean(),
+    attachmentId: z.string().nullable(),
+  })
+  .refine(
+    (i) => i.insuranceCase || i.insurancePayout === null,
+    "Plnění lze evidovat pouze u pojistné události",
+  );
+export function inspectionStatus(v: Vehicle, at = today()) {
+  const due = v.stkValidUntil ?? null;
+  if (!due) return { status: "unknown", days: null, validUntil: null };
+  const days = Math.round((Date.parse(due) - Date.parse(at)) / 86400000);
+  return {
+    status:
+      days < 0 ? "overdue" : days <= (v.stkLeadDays ?? 30) ? "soon" : "ok",
+    days,
+    validUntil: due,
+  };
+}
 export function latestReading(s: Pick<State, "readings">, vehicleId: string) {
   return s.readings
     .filter((r) => r.vehicleId === vehicleId && r.status === "accepted")
