@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { PGlite } from "@electric-sql/pglite";
 import { createCloudHandler } from "../server/cloud-handler.ts";
@@ -345,6 +346,72 @@ test("cloud: accountless photo report, private storage, idempotency, manager rol
           "/command",
           { action: "plan.restore", payload: { id: planId } },
           "admin",
+        )
+      ).status,
+      200,
+    );
+    const workerToken = "isolated-worker-secret";
+    assert.equal(
+      (
+        await req(
+          "/command",
+          {
+            action: "km.worker.pair",
+            payload: {
+              keyHash: createHash("sha256").update(workerToken).digest("hex"),
+            },
+          },
+          "admin",
+        )
+      ).status,
+      200,
+    );
+    const publicState = await (await req("/state", undefined, "admin")).json();
+    assert.equal(publicState.kmWorker.keyHash, undefined);
+    assert.equal((await req("/km-worker/claim", {})).status, 403);
+    assert.equal(
+      (
+        await req("/state", undefined, undefined, {
+          "X-Km-Worker-Token": workerToken,
+        })
+      ).status,
+      401,
+    );
+    const requestKey = crypto.randomUUID();
+    assert.equal(
+      (
+        await req(
+          "/command",
+          {
+            action: "km.import.request",
+            payload: { requestKey, vehicleId: "v1", source: "trip" },
+          },
+          "admin",
+        )
+      ).status,
+      200,
+    );
+    const claimed = await req("/km-worker/claim", {}, undefined, {
+      "X-Km-Worker-Token": workerToken,
+    });
+    assert.equal(claimed.status, 200);
+    const lease = (await claimed.json()).job;
+    assert.equal(lease.id, requestKey);
+    assert.equal(
+      (
+        await req(
+          "/km-worker/complete",
+          {
+            id: requestKey,
+            lease: lease.lease,
+            snapshot: {
+              source: "Moje Autoškola",
+              capturedAt: new Date().toISOString(),
+              readings: [],
+            },
+          },
+          undefined,
+          { "X-Km-Worker-Token": workerToken },
         )
       ).status,
       200,

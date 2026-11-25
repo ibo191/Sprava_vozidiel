@@ -1,4 +1,5 @@
 import { applyCommand } from "./commands.ts";
+import { registerKmWorker } from "./km-worker-api.ts";
 import express from "express";
 import { randomBytes } from "node:crypto";
 import { z, ZodError } from "zod";
@@ -43,6 +44,7 @@ export function createApp(store = new Store()) {
     next();
   });
   registerReporting(app, store);
+  registerKmWorker(app, store);
   const safeUser = (u: User) => u;
   app.post("/api/login", (req, res, next) => {
     try {
@@ -154,7 +156,13 @@ export function createApp(store = new Store()) {
     const u: User = res.locals.user,
       s = store.load();
     const visible = s;
-    res.json({ ...visible, attachments: [] });
+    res.json({
+      ...visible,
+      kmWorker: visible.kmWorker
+        ? { ...visible.kmWorker, keyHash: undefined }
+        : undefined,
+      attachments: [],
+    });
   });
   const ownAttachment = (s: State, u: User, aid: string | null) => {
     if (aid)

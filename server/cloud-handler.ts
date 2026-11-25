@@ -3,6 +3,7 @@ import { Buffer } from "node:buffer";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { z, ZodError } from "zod";
 import { applyCommand } from "./commands.ts";
+import { claimKmJob, completeKmJob } from "./km-import.ts";
 import { parseAttachment } from "./attachments.ts";
 import { HttpError } from "./http-error.ts";
 import { manager, today, type State, type User } from "../src/domain.ts";
@@ -48,6 +49,12 @@ export function createCloudHandler(db: SupabaseClient) {
       fail(403, "Správa je přístupná pouze aktivnímu správci a adminovi.");
     return u!;
   }
+  function worker(req: Request, s: Snapshot) {
+    const expected = s.body.kmWorker?.keyHash ?? "";
+    const supplied = hash(req.headers.get("x-km-worker-token") ?? "");
+    if (!expected || !same(expected, supplied))
+      fail(403, "Importér km není připojen nebo jeho klíč už neplatí.");
+  }
   function link(req: Request, s: Snapshot) {
     const value = req.headers.get("x-report-token") ?? "";
     if (
@@ -88,11 +95,13 @@ export function createCloudHandler(db: SupabaseClient) {
       u: User | null,
     ) => Promise<{ result: unknown; commit?: Record<string, unknown> }>,
     anonymous = false,
+    workerAccess = false,
   ) {
     for (let attempt = 0; attempt < 4; attempt++) {
       const s = await snapshot();
-      const u = anonymous ? null : await current(req, s);
+      const u = anonymous || workerAccess ? null : await current(req, s);
       if (anonymous) link(req, s);
+      if (workerAccess) worker(req, s);
       const { result, commit } = await run(s, u);
       const paths = await saveFiles(s.body);
       try {
@@ -391,10 +400,52 @@ export function createCloudHandler(db: SupabaseClient) {
         }
         fail(404, "Neznámý požadavek.");
       }
+      if (path.startsWith("/km-worker/")) {
+        worker(req, s);
+        if (req.method !== "POST") fail(405, "Použijte POST.");
+        if (path === "/km-worker/claim") {
+          const pending = s.body.kmImports?.some(
+            (j) =>
+              j.status === "queued" ||
+              (j.status === "running" &&
+                Date.parse(j.leaseUntil ?? "") < Date.now()),
+          );
+          if (
+            !pending &&
+            s.body.kmWorker?.lastSeen &&
+            Date.now() - Date.parse(s.body.kmWorker.lastSeen) < 45000
+          )
+            return json({ job: null });
+          return json(
+            await mutate(
+              req,
+              async (snap) => ({ result: { job: claimKmJob(snap.body) } }),
+              false,
+              true,
+            ),
+          );
+        }
+        if (path === "/km-worker/complete")
+          return json(
+            await mutate(
+              req,
+              async (snap) => ({ result: completeKmJob(snap.body, body) }),
+              false,
+              true,
+            ),
+          );
+        fail(404, "Neznámý požadavek importéru.");
+      }
       const u = await current(req, s);
       if (req.method === "GET" && path === "/me") return json(u);
       if (req.method === "GET" && path === "/state")
-        return json({ ...s.body, attachments: [] });
+        return json({
+          ...s.body,
+          kmWorker: s.body.kmWorker
+            ? { ...s.body.kmWorker, keyHash: undefined }
+            : undefined,
+          attachments: [],
+        });
       if (req.method === "GET" && path === "/report-link")
         return json({ path: "/hlaseni#" + s.config.reportToken });
       if (req.method === "POST" && path === "/report-link/rotate") {

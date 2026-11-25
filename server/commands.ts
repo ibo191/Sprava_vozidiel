@@ -91,7 +91,78 @@ export function applyCommand(
     });
     return reliable;
   };
-  if (action === "vehicle.retire") {
+  if (action === "km.worker.pair") {
+    requireManager();
+    const b = z
+      .object({ keyHash: z.string().regex(/^[a-f0-9]{64}$/) })
+      .parse(payload);
+    s.kmWorker = {
+      keyHash: b.keyHash,
+      lastSeen: null,
+      pairedAt: new Date().toISOString(),
+      pairedBy: u.id,
+    };
+    audit("km-worker", "local", null, {
+      pairedAt: s.kmWorker.pairedAt,
+      pairedBy: u.id,
+    });
+  } else if (action === "km.import.request") {
+    requireManager();
+    const b = z
+      .object({
+        requestKey: z.string().uuid(),
+        vehicleId: z.string().nullable(),
+        source: z.enum(["fuel", "trip", "both"]),
+      })
+      .parse(payload);
+    assert(
+      s.kmWorker?.keyHash,
+      "Nejdříve připojte místní importér km podle README.",
+    );
+    const existing = s.kmImports?.find((j) => j.id === b.requestKey);
+    if (existing) return existing;
+    const vehicles = s.vehicles.filter(
+      (v) =>
+        v.active &&
+        v.kind !== "trailer" &&
+        (!b.vehicleId || v.id === b.vehicleId),
+    );
+    assert(vehicles.length, "Nejsou vybraná aktivní motorová vozidla.");
+    assert(
+      !(s.kmImports ?? []).some((j) =>
+        ["queued", "running"].includes(j.status),
+      ),
+      "Import už čeká nebo probíhá. Počkejte na jeho výsledek.",
+      409,
+    );
+    const job = {
+      id: b.requestKey,
+      vehicleIds: vehicles.map((v) => v.id),
+      source: b.source,
+      status: "queued" as const,
+      requestedAt: new Date().toISOString(),
+      requestedBy: u.id,
+    };
+    (s.kmImports ??= []).push(job);
+    audit("km-import", job.id, null, job);
+    result = job;
+  } else if (action === "km.import.cancel") {
+    requireManager();
+    const b = z.object({ id: z.string().uuid() }).parse(payload);
+    const job = s.kmImports?.find((j) => j.id === b.id);
+    assert(
+      job && ["queued", "running"].includes(job.status),
+      "Import už není aktivní.",
+      409,
+    );
+    const before = structuredClone(job);
+    job.status = "error";
+    job.error = "Požadavek zrušil správce.";
+    job.finishedAt = new Date().toISOString();
+    delete job.lease;
+    delete job.leaseUntil;
+    audit("km-import", job.id, before, job);
+  } else if (action === "vehicle.retire") {
     requireManager();
     const b = z
       .object({
@@ -313,6 +384,21 @@ export function applyCommand(
     }
     s.deletedPlans = s.deletedPlans!.filter((x) => x !== saved);
     audit("plan", b.id, { deleted: true }, saved.plan);
+  } else if (action === "plan.booking") {
+    requireManager();
+    const b = z
+      .object({
+        id: z.string(),
+        booking: dateSchema.nullable(),
+        bookingNote: z.string().trim().max(1000),
+      })
+      .parse(payload);
+    const p = s.plans.find((p) => p.id === b.id);
+    assert(p, "Plán byl smazán nebo neexistuje. Obnovte evidenci.", 404);
+    const before = structuredClone(p);
+    p.booking = b.booking;
+    p.bookingNote = b.bookingNote;
+    audit("plan", p.id, before, p);
   } else if (action === "plan.save") {
     requireManager();
     const b = planSchema.parse(payload);
@@ -357,6 +443,63 @@ export function applyCommand(
     }
     audit("issue", issue.id, null, issue);
     result = issue;
+  } else if (action === "issue.delete") {
+    requireManager();
+    const b = z
+      .object({ id: z.string(), reason: z.string().trim().min(3).max(1000) })
+      .parse(payload);
+    const i = s.issues.find((i) => i.id === b.id);
+    assert(i, "Závada nenalezena.", 404);
+    assert(
+      i.status === "resolved",
+      "Nejprve označte závadu jako vyřešenou. Otevřené hlášení nelze smazat.",
+    );
+    (s.deletedIssues ??= []).push({
+      issue: structuredClone(i),
+      deletedAt: new Date().toISOString(),
+      deletedBy: u.id,
+      reason: b.reason,
+    });
+    s.issues = s.issues.filter((x) => x.id !== i.id);
+    audit("issue", i.id, i, { deleted: true, reason: b.reason });
+  } else if (action === "issue.restore") {
+    requireManager();
+    const b = z.object({ id: z.string() }).parse(payload);
+    const saved = s.deletedIssues?.find((x) => x.issue.id === b.id);
+    assert(saved, "Smazaná závada nenalezena.", 404);
+    assert(
+      !s.issues.some((x) => x.id === b.id),
+      "Závada už je v seznamu.",
+      409,
+    );
+    s.issues.push(saved.issue);
+    s.deletedIssues = s.deletedIssues!.filter((x) => x !== saved);
+    audit("issue", b.id, { deleted: true }, saved.issue);
+  } else if (action === "issue.update") {
+    requireManager();
+    const b = z
+      .object({
+        id: z.string(),
+        text: z.string().trim().min(3).max(3000),
+        status: z
+          .enum(["new", "in_progress", "needs_info", "resolved"])
+          .optional(),
+      })
+      .parse(payload);
+    const i = s.issues.find((i) => i.id === b.id);
+    assert(i, "Závada byla smazána nebo neexistuje.", 404);
+    const before = structuredClone(i);
+    if (!i.updates?.length && i.response.trim())
+      i.updates = [{ id: id(), at: null, actor: null, text: i.response }];
+    i.status = b.status ?? i.status;
+    (i.updates ??= []).push({
+      id: id(),
+      at: new Date().toISOString(),
+      actor: u.id,
+      text: b.text,
+      status: i.status,
+    });
+    audit("issue", i.id, before, i);
   } else if (action === "issue.review") {
     requireManager();
     const b = z
@@ -387,8 +530,35 @@ export function applyCommand(
         ),
         "Servis musí patřit stejnému vozidlu.",
       );
-    audit("issue", i.id, { ...i }, b);
+    const before = structuredClone(i);
+    const changedResponse = i.response !== b.response,
+      changedStatus = i.status !== b.status;
+    if (
+      (changedResponse || changedStatus) &&
+      !i.updates?.length &&
+      i.response.trim()
+    )
+      i.updates = [{ id: id(), at: null, actor: null, text: i.response }];
+    if (changedResponse || changedStatus) {
+      const labels = {
+        new: "Nová",
+        in_progress: "V řešení",
+        needs_info: "K doplnění",
+        resolved: "Vyřešena",
+      };
+      const text = changedResponse
+        ? b.response.trim() || "Odpověď správce byla odstraněna."
+        : `Stav změněn: ${labels[b.status]}.`;
+      (i.updates ??= []).push({
+        id: id(),
+        at: new Date().toISOString(),
+        actor: u.id,
+        text,
+        status: b.status,
+      });
+    }
     Object.assign(i, b, { insuranceCase: insured, insurancePayout: payout });
+    audit("issue", i.id, before, i);
   } else if (action === "issue.supplement") {
     const b = z
       .object({
@@ -428,7 +598,9 @@ export function applyCommand(
       );
       assert(
         existing.vehicleId === b.vehicleId ||
-          !s.issues.some((i) => i.serviceId === existing.id),
+          ![...s.issues, ...(s.deletedIssues ?? []).map((x) => x.issue)].some(
+            (i) => i.serviceId === existing.id,
+          ),
         "Servis je propojen s hlášením závady. Nejprve zrušte propojení, potom změňte vozidlo.",
       );
     }

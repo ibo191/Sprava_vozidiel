@@ -14,6 +14,10 @@ export function readingLabel(s: State, r: Reading) {
     );
   if (r.source.startsWith("ma-odometer:"))
     return "Odečet Moje Autoškola #" + r.source.slice("ma-odometer:".length);
+  if (r.source.startsWith("ma-fuel:"))
+    return "Tankování Moje Autoškola #" + r.source.slice("ma-fuel:".length);
+  if (r.source.startsWith("ma-trip:"))
+    return "Výpis jízd Moje Autoškola #" + r.source.slice("ma-trip:".length);
   return r.source.startsWith("initial") ? "Počáteční odečet" : "Ruční odečet";
 }
 export function MileageConflicts({

@@ -11,7 +11,8 @@
     "test:e2e": "playwright test",
     "fetch:moje": "node scripts/fetch-fleet.mjs",
     "fetch:services": "node scripts/fetch-services.mjs",
-    "import:moje": "tsx scripts/import-fleet.ts"
+    "import:moje": "tsx scripts/import-fleet.ts",
+    "km:worker": "node scripts/km-worker.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.119.2",

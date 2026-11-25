@@ -43,6 +43,7 @@ export type Reading = {
   source: string;
 };
 export type Plan = {
+  bookingNote?: string;
   catalogKind?: "action" | "part";
   lastServiceId?: string;
   reviewServiceId?: string;
@@ -79,6 +80,13 @@ export type Fuel = {
   source?: SourceRef;
 };
 export type Issue = {
+  updates?: {
+    id: string;
+    at: string | null;
+    actor: string | null;
+    text: string;
+    status?: Issue["status"];
+  }[];
   insuranceCase?: boolean;
   insurancePayout?: number | null;
   reporterName?: string | null;
@@ -142,6 +150,41 @@ export type Attachment = {
   data: string;
 };
 export type State = {
+  kmWorker?: {
+    keyHash?: string;
+    lastSeen: string | null;
+    pairedAt: string;
+    pairedBy: string;
+  };
+  kmImports?: {
+    id: string;
+    vehicleIds: string[];
+    source: "fuel" | "trip" | "both";
+    status: "queued" | "running" | "done" | "error";
+    requestedAt: string;
+    requestedBy: string;
+    startedAt?: string;
+    finishedAt?: string;
+    lease?: string;
+    leaseUntil?: string;
+    error?: string;
+    result?: {
+      added: number;
+      conflicts: number;
+      skipped: number;
+      unmatched: number;
+      vehiclesWithReadings?: number;
+      missingVehicles?: number;
+      warnings: string[];
+      capturedAt: string;
+    };
+  }[];
+  deletedIssues?: {
+    issue: Issue;
+    deletedAt: string;
+    deletedBy: string;
+    reason: string;
+  }[];
   deletedReadings?: {
     reading: Reading;
     deletedAt: string;
@@ -253,6 +296,7 @@ export const planSchema = z
     leadKm: z.number().int().nonnegative(),
     leadDays: z.number().int().nonnegative(),
     booking: dateSchema.nullable(),
+    bookingNote: z.string().trim().max(1000).optional(),
   })
   .refine(
     (p) => p.intervalKm || p.intervalMonths || p.nextDate || p.nextKm !== null,

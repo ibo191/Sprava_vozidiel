@@ -144,6 +144,18 @@ try {
     .getByRole("heading", { name: "Upravit servisní záznam", exact: true })
     .waitFor();
   await admin.getByLabel("Celková cena", { exact: false }).fill("4500");
+  await admin
+    .getByLabel("Stav km (prázdné = neznámý)", { exact: false })
+    .fill("");
+  await admin
+    .getByRole("button", { name: "Použít poslední známé km", exact: true })
+    .click();
+  assert.equal(
+    await admin
+      .getByLabel("Stav km (prázdné = neznámý)", { exact: false })
+      .inputValue(),
+    "148300",
+  );
   await admin.screenshot({
     path: "data/maintenance-service-editor.png",
     fullPage: false,
@@ -173,6 +185,24 @@ try {
     .locator("nav")
     .getByRole("button", { name: /^Servisní plány/ })
     .click();
+  const oilPlanRow = admin
+    .locator("table tbody tr")
+    .filter({ hasText: "Výměna motorového oleje" });
+  await oilPlanRow
+    .getByRole("button", { name: "Objednat", exact: true })
+    .click();
+  await admin
+    .getByLabel("Termín objednání", { exact: false })
+    .fill("2026-12-20");
+  await admin
+    .getByLabel("Poznámka k objednání / servis", { exact: false })
+    .fill("Potvrzeno telefonicky");
+  await admin.getByRole("button", { name: "Uložit", exact: true }).click();
+  await admin.getByRole("dialog").waitFor({ state: "hidden" });
+  assert.equal(
+    store.load().plans.find((p) => p.id === "p1").booking,
+    "2026-12-20",
+  );
   await admin.getByRole("button", { name: /Smazat plán .*oleje/ }).click();
   await admin.getByLabel("Důvod smazání").fill("Testovací plán");
   await admin.getByRole("button", { name: "Smazat plán", exact: true }).click();
@@ -337,6 +367,40 @@ try {
   await admin.getByRole("dialog").waitFor({ state: "hidden" });
   assert.equal(store.load().issues.at(-1).insurancePayout, 12500.75);
   assert.ok((await card.innerText()).includes("12 500,75"));
+  await card
+    .getByRole("button", { name: "Přidat aktualizaci", exact: true })
+    .click();
+  await admin
+    .getByLabel("Aktualizace / co se děje", { exact: false })
+    .fill("Díly dorazily, oprava dokončena.");
+  await admin
+    .getByLabel("Stav po aktualizaci", { exact: false })
+    .selectOption("resolved");
+  await admin.getByRole("button", { name: "Uložit", exact: true }).click();
+  await admin.getByRole("dialog").waitFor({ state: "hidden" });
+  assert.ok(
+    (await card.locator(".issue-updates").innerText()).includes(
+      "Díly dorazily",
+    ),
+  );
+  await card
+    .getByRole("button", { name: "Smazat závadu", exact: true })
+    .click();
+  await admin
+    .getByLabel("Důvod smazání", { exact: false })
+    .fill("Vyřešený technický test");
+  await admin
+    .getByRole("button", { name: "Smazat závadu", exact: true })
+    .last()
+    .click();
+  await admin.getByRole("dialog").waitFor({ state: "hidden" });
+  assert.equal(await card.count(), 0);
+  await admin.getByText(/Smazané vyřešené závady \(/).click();
+  await admin.locator(".archived-issue summary").click();
+  await admin
+    .getByRole("button", { name: "Obnovit závadu", exact: true })
+    .click();
+
   await page.getByRole("button", { name: "Nahlásit další závadu" }).click();
   await page.setViewportSize({ width: 1440, height: 1050 });
   await page.screenshot({

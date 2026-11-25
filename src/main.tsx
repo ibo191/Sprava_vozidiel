@@ -48,6 +48,9 @@ import {
   type Issue,
 } from "./domain";
 import "./styles.css";
+import { KmImportPanel } from "./KmImportPanel";
+import { IssueUpdates } from "./IssueUpdates";
+import { DeletedIssues } from "./DeletedIssues";
 import { VehicleHistory } from "./VehicleHistory";
 import { InspectionAlerts } from "./InspectionAlerts";
 import { MileageReadings } from "./MileageReadings";
@@ -382,6 +385,7 @@ function App() {
             leadKm: 1000,
             leadDays: 30,
             booking: null,
+            bookingNote: "",
           },
       fields: [
         vehicleField,
@@ -396,6 +400,32 @@ function App() {
         input("leadKm", "Upozornit předem (km)", "number"),
         input("leadDays", "Upozornit předem (dny)", "number"),
         input("booking", "Termín objednání", "date", false),
+        input(
+          "bookingNote",
+          "Poznámka k objednání / servis",
+          "textarea",
+          false,
+        ),
+      ],
+    });
+  const bookingDialog = (p: Plan) =>
+    setDialog({
+      title: p.booking ? "Upravit objednání servisu" : "Objednat servis",
+      subtitle: `${vname(p.vehicleId)} · ${p.action}. Objednání nemění interval ani neskryje překročený termín.`,
+      action: "plan.booking",
+      initial: {
+        id: p.id,
+        booking: p.booking,
+        bookingNote: p.bookingNote ?? "",
+      },
+      fields: [
+        input("booking", "Termín objednání", "date", false),
+        input(
+          "bookingNote",
+          "Poznámka k objednání / servis",
+          "textarea",
+          false,
+        ),
       ],
     });
   const serviceDialog = (record?: Service) =>
@@ -710,17 +740,24 @@ function App() {
                 ) : (
                   <span className="muted">Neobjednáno</span>
                 )}
+                {p.bookingNote && <small>{p.bookingNote}</small>}
+                <button
+                  className="text-button"
+                  onClick={() => bookingDialog(p)}
+                >
+                  {p.booking ? "Upravit objednání" : "Objednat"}
+                </button>
               </td>
               <td className="muted">{p.responsible}</td>
               <td>
                 {admin && (
                   <>
                     <button
-                      className="icon-btn"
-                      aria-label={"Upravit " + p.action}
+                      className="button secondary"
+                      aria-label={"Upravit plán " + p.action}
                       onClick={() => planDialog(p)}
                     >
-                      <ChevronRight size={18} />
+                      Upravit plán
                     </button>
                     <button
                       className="text-button"
@@ -1047,6 +1084,12 @@ function App() {
                     }}
                   />
                   <InspectionAlerts state={s} onEdit={inspectionDialog} />
+                  <KmImportPanel
+                    state={s}
+                    vehicleId={vehicleId}
+                    command={command}
+                    onError={notify}
+                  />
                   <div className="summary-grid">
                     <Stat
                       title="Aktivní vozidla"
@@ -1359,6 +1402,14 @@ function App() {
                     </a>
                   )}
                 </div>
+              )}
+              {page === "vehicles" && vehicleId === "all" && (
+                <KmImportPanel
+                  state={s}
+                  vehicleId={vehicleId}
+                  command={command}
+                  onError={notify}
+                />
               )}
               {page === "vehicles" && (
                 <>
@@ -1711,7 +1762,61 @@ function App() {
                             )}
                           </p>
                         )}
+                        <IssueUpdates issue={i} state={s} />
                         <div className="row-actions">
+                          <button
+                            onClick={() =>
+                              setDialog({
+                                title: "Přidat aktualizaci závady",
+                                subtitle: `${vname(i.vehicleId)} · nová zpráva zůstane v časové historii řešení.`,
+                                action: "issue.update",
+                                initial: {
+                                  id: i.id,
+                                  text: "",
+                                  status: i.status,
+                                },
+                                fields: [
+                                  input(
+                                    "text",
+                                    "Aktualizace / co se děje",
+                                    "textarea",
+                                  ),
+                                  {
+                                    name: "status",
+                                    label: "Stav po aktualizaci",
+                                    type: "select",
+                                    options: Object.entries(issueNames).map(
+                                      ([value, label]) => ({ value, label }),
+                                    ),
+                                  },
+                                ],
+                              })
+                            }
+                          >
+                            Přidat aktualizaci
+                          </button>
+                          {i.status === "resolved" && (
+                            <button
+                              onClick={() =>
+                                setDialog({
+                                  title: "Smazat vyřešenou závadu",
+                                  subtitle:
+                                    "Závada zmizí z běžného seznamu. Průběh řešení a pojistné plnění zůstanou v historii; smazání vozidlo nevrací do provozu.",
+                                  action: "issue.delete",
+                                  initial: { id: i.id, reason: "" },
+                                  fields: [
+                                    input(
+                                      "reason",
+                                      "Důvod smazání",
+                                      "textarea",
+                                    ),
+                                  ],
+                                })
+                              }
+                            >
+                              Smazat závadu
+                            </button>
+                          )}
                           {admin ? (
                             <button onClick={() => reviewIssue(i)}>
                               Zpracovat hlášení
@@ -1763,6 +1868,21 @@ function App() {
                     <Empty text="Zatím žádná hlášení závad vozidel." />
                   )}
                 </div>
+              )}
+              {page === "issues" && (
+                <DeletedIssues
+                  state={s}
+                  vehicleId={vehicleId}
+                  search={search}
+                  onRestore={async (id) => {
+                    try {
+                      await command("issue.restore", { id });
+                      notify("Závada obnovena do seznamu.");
+                    } catch (e) {
+                      notify((e as Error).message);
+                    }
+                  }}
+                />
               )}
               {page === "issues" && admin && (
                 <MileageReadings
@@ -2371,7 +2491,8 @@ function FormDialog({
   const [values, setValues] = useState({ ...d.initial }),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
-    [file, setFile] = useState<File | null>(null);
+    [file, setFile] = useState<File | null>(null),
+    [kmMessage, setKmMessage] = useState("");
   const cameraInput = useRef<HTMLInputElement>(null);
   const attachmentInput = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState("");
@@ -2455,6 +2576,14 @@ function FormDialog({
       setBusy(false);
     }
   };
+  const kmCandidate = state.readings
+    .filter(
+      (r) =>
+        r.vehicleId === values.vehicleId &&
+        r.status === "accepted" &&
+        (!values.date || r.date <= values.date),
+    )
+    .sort((a, b) => b.date.localeCompare(a.date) || b.km - a.km)[0];
   const itemNames = Array.from(
     new Set([...catalogFor(state).map((e) => e.name)]),
   );
@@ -2610,6 +2739,48 @@ function FormDialog({
                       min={f.type === "number" ? 0 : undefined}
                       maxLength={f.type === "number" ? undefined : 3000}
                     />
+                  )}
+                  {f.name === "km" && d.extra === "items" && (
+                    <span className="service-km-tools">
+                      <button
+                        type="button"
+                        className="text-button"
+                        disabled={!kmCandidate}
+                        onClick={() => set("km", kmCandidate!.km)}
+                      >
+                        Použít poslední známé km
+                      </button>
+                      <small>
+                        {kmCandidate
+                          ? `${kmCandidate.km.toLocaleString("cs-CZ")} km · odpočet ${date(kmCandidate.date)} (nejnovější k datu servisu)`
+                          : "Pro vozidlo a datum servisu není doložený odpočet; km neodhadujeme."}
+                      </small>
+                      <button
+                        type="button"
+                        className="text-button"
+                        disabled={!state.kmWorker}
+                        onClick={async () => {
+                          try {
+                            await api("/command", {
+                              action: "km.import.request",
+                              payload: {
+                                requestKey: crypto.randomUUID(),
+                                vehicleId: values.vehicleId,
+                                source: "both",
+                              },
+                            });
+                            setKmMessage(
+                              "Import km čeká na místní program. Po dokončení se nabídka odpočtu obnoví; tlačítkem jej převezmete do formuláře.",
+                            );
+                          } catch (e) {
+                            setKmMessage((e as Error).message);
+                          }
+                        }}
+                      >
+                        Importovat nové km z Moje Autoškola
+                      </button>
+                      {kmMessage && <small role="status">{kmMessage}</small>}
+                    </span>
                   )}
                 </label>
               ))}
@@ -2800,7 +2971,9 @@ function FormDialog({
                     ? "Smazat odpočet"
                     : d.action === "plan.delete"
                       ? "Smazat plán"
-                      : "Uložit"}
+                      : d.action === "issue.delete"
+                        ? "Smazat závadu"
+                        : "Uložit"}
             </button>
           </div>
         </form>

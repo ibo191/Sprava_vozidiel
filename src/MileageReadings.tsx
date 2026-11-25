@@ -41,6 +41,21 @@ export function MileageReadings({
           </p>
         </div>
       </div>
+      {[...(s.kmImports ?? [])]
+        .reverse()
+        .filter((j) => j.result?.warnings.length)
+        .slice(0, 3)
+        .map((j) => (
+          <div className="record-note" key={j.id}>
+            <strong>
+              Poznámky k importu{" "}
+              {new Date(j.requestedAt).toLocaleString("cs-CZ")}
+            </strong>
+            {j.result!.warnings.map((w, i) => (
+              <p key={i}>{w}</p>
+            ))}
+          </div>
+        ))}
       <div className="table-scroll">
         <table>
           <thead>

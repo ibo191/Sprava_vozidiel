@@ -43,6 +43,8 @@ Odeslání vytváří hlášení ve stavu Nové a záznam auditu bez falešného
 - **Servisní historie → Upravit servis** opraví i importovaný záznam: datum, km, úkony, díly, ceny, dílnu, poznámku a doklad. Původní ID/zdroj zůstávají a historie změn uchová stav před opravou. Změna km nahradí původní servisní odečet; rozpor jde do Závady a hlášení. Změna podkladu již potvrzeného plánu vyžádá jeho kontrolu, nepřepisuje termíny automaticky. Souběžnou zastaralou úpravu server odmítne. Opakovaný import místní opravu nezruší. Opravy se neposílají zpět do Moje Autoškola.
 - **Mazání km:** Závady a hlášení obsahují evidenci všech odpočtů i nedatovaných tachometrů. Správce zadá důvod smazání. Odpočet se vyřadí z chronologie, původní tankování/servis i cena zůstanou. Omylem smazaný odpočet lze obnovit po kontrole chronologie; nový import jej sám neobnoví. Oprava servisní ceny smazané km nevrací; návrat opravených km je výslovný.
 - **Karta vozidla:** po otevření vozidla je nahoře přehled provedených servisů s datem, km, úkony, díly, cenou a dokladem. Platnost STK lze zadat přímo tlačítkem Nastavit STK i u importovaného vozidla bez doplňování neznámé značky. Předstih je nastavitelný ve dnech (výchozí 30), poslední den platnosti se označí jako končící dnes. Přehled i karta upozorní na blížící se konec a překročení; neznámá platnost se neodhaduje. Změny jsou auditované, žádný zákonný interval aplikace nepředpokládá.
+- **Průběh řešení závady:** Přidat aktualizaci uloží zprávu s časem a autorem, předchozí zprávy nepřepisuje. Změna stavu a odpovědi při zpracování také přibude do časové historie. Vyřešenou závadu lze s důvodem smazat ze seznamu a obnovit ze Smazané vyřešené závady. Přílohy, pojistné plnění a odstavení vozidla zůstávají zachované; otevřenou závadu server smazat nedovolí.
+- **Objednání servisu:** viditelné Upravit plán otevře celý plán. Objednat / Upravit objednání mění samostatně datum a poznámku k objednání, zachovává základ, interval i upozornění na překročení.
 - **Pořadí hlášení a pojištění:** hlášení jsou v Závady a hlášení nad všemi kilometry; nevyřešená jsou před uzavřenými, novější před staršími. Instruktor může označit souvislost s pojistnou událostí. Výši plnění od pojišťovny v Kč doplní pouze správce/admin při zpracování nebo interním zápisu. Prázdná částka je neznámá, nula je známé nulové plnění; finanční hodnoty od veřejného formuláře server nepřijímá. Plnění zůstává oddělené od servisních nákladů.
 - **Mazání plánů:** u plánu je Smazat, s povinným důvodem. Plán přestane upozorňovat a zmizí z návrhů servisů, historie servisů zůstane. Seznam smazaných plánů umožňuje obnovu; zastaralý otevřený formulář smazaný plán znovu nevytvoří.
 - **Další servis při zápisu:** přímo pod úkony/díly lze vybrat další plán, interval km/měsíců, samostatný příští limit, předstih a zodpovědnou osobu. Motorový olej má pro nový plán předvyplněno 15 000 km, hodnotu lze změnit. Předstih je viditelně upravitelný (výchozí 1 000 km / 14 dní); časový interval nemá odhadnutou výchozí hodnotu. U neznámých či konfliktních km se další kilometrový základ nevymýšlí; stávající známý termín se neodsune a plán čeká na doplnění.
@@ -51,7 +53,29 @@ Odeslání vytváří hlášení ve stavu Nové a záznam auditu bez falešného
 - Rozpory km jsou pouze v **Závady a hlášení**. Případ ukáže zdrojové záznamy, data, hodnoty a rozdíl. Různé km stejného dne bez času znamenají neověřené pořadí, ne automaticky chybu. Pokles mezi dny je popsán konkrétně. Aplikace sama nevybírá odhadnutého vítěze.
 - CSV tankování a servisů obsahuje původ dat, BOM a středníky; buňky začínající znakem vzorce jsou ošetřené. Exportuje se celá evidence.
 
-## Čtecí import z Moje Autoškola
+## Aktuální km z Moje Autoškola přes tlačítko
+
+Na Přehledu a v seznamu Vozidel je **Importovat aktuální km**. Zdroj lze zvolit: tankování, výpis jízd, nebo obojí. Požadavek zpracuje místní program na PC se stávajícím přihlášením scraperu, nikoliv prohlížeč ve Vercelu. PC i program musí běžet. Stav ukazuje Čeká na PC / Probíhá / Dokončeno / Chyba; žádná synchronizace se nepředstírá. Aktivní požadavek lze zrušit.
+
+Přenáší se pouze vozidlo, zdrojové ID, datum a odpočet tachometru. Z jízd se bere **Tacho konec**, nikoliv délka jízdy. Neimportují se další tankování, ceny, servisy ani údaje žáků. Čtecí okno je posledních 180 dní, volí se nejnovější doložený den za vozidlo a zdroj; u jízd i dostupný čas v seznamu. Pokud nejnovější den nelze jednoznačně uspořádat, údaje se ponechají ke kontrole. Starší platný stav se neodhadne podle nedatovaného tachometru z přehledu.
+
+Zdrojová ID chrání opakovaný import; ruční opravy a smazané odpočty se automaticky nevracejí. Rozpory i poznámky ke zdroji jsou v Závady a hlášení. Doložené km zůstávají datované. Ve formuláři servisu je **Použít poslední známé km**: nabídne nejnovější přijatý odpočet nejvýše k datu servisu, ukáže datum a hodnotu převezme až po kliknutí. Novější km se do zpětného servisu nekopírují. Odtud lze také vyžádat nový import pro dané vozidlo.
+
+### Místní program
+
+Ve webu **Nová konfigurace importéru / Připojit místní importér** vygeneruje soukromý soubor `km-worker.json`. Uložte jej jako `data/km-worker.json`; nikdy do GitHubu. Nová konfigurace zneplatní předchozí klíč. Program používá instalaci Playwright/Chrome a přihlášený profil v sousedním projektu Dashboard. Přihlášení zůstává na PC, neposílá se do cloudu.
+
+```powershell
+npm run km:worker
+# Jednorázová kontrola fronty:
+npm run km:worker -- --once
+```
+
+Program pouze kontroluje frontu a čte zdroj po ručním kliknutí. Není nastavená denní úloha ani automatický start Windows. Při ukončení programu či vypnutí PC požadavky čekají. Vypršení přihlášení se zobrazí jako chyba; obnovte jej v původním scraperu a zadejte nový požadavek. Otevřený profil nesmí současně používat jiný scraper. Konfigurace může změnit `dashboard`, `profile` a `lookbackDays`; výchozí profil je `scraper/.session-import-20261001b`.
+
+Klíč importéru dovoluje jen převzetí a dokončení km úlohy s časově omezeným lease, ne čtení celé správy ani změnu servisů. V databázi je pouze hash klíče. Oprávnění se kontroluje při převzetí i uložení a odvolaný či opakovaný požadavek se odmítne. Místní program přijímá pouze pevně určený API host této aplikace. Zdrojové požadavky jsou GET/HEAD do povolených seznamů; zápisové a mazací akce jsou blokované.
+
+## Původní jednorázový import historie (lokální nástroje)
 
 Přenos je jednorázový, ručně spuštěný a pouze **Moje Autoškola → tato aplikace**. Žádná odchozí synchronizace ani denní zapisovací program není implementován nebo naplánován. Sběrač používá dosavadní Playwright instalaci a přihlášený profil sousedního projektu `Dashboard`; nepřepisuje jeho exporty, neodesílá formuláře a používá GET/HEAD. Pokud přihlášení vyprší, musí je uživatel obnovit ručně; CAPTCHA se neobchází. GPS a údaje žáků se nesbírají.
 

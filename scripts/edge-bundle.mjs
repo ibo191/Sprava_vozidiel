@@ -12,6 +12,7 @@ export function edgeFiles() {
   for (const name of [
     "server/cloud-handler.ts",
     "server/commands.ts",
+    "server/km-import.ts",
     "server/http-error.ts",
     "server/attachments.ts",
     "src/domain.ts",
